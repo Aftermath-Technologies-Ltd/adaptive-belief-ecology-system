@@ -68,7 +68,13 @@ class SQLiteBeliefStore(BeliefStoreABC):
                 score REAL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                session_id TEXT
+                session_id TEXT,
+                user_id TEXT,
+                salience REAL DEFAULT 0.5,
+                half_life_days REAL DEFAULT 7.0,
+                evidence_for TEXT DEFAULT '[]',
+                evidence_against TEXT DEFAULT '[]',
+                links TEXT DEFAULT '[]'
             )
         """)
 
@@ -78,6 +84,21 @@ class SQLiteBeliefStore(BeliefStoreABC):
         await db.execute("CREATE INDEX IF NOT EXISTS idx_beliefs_session ON beliefs(session_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_beliefs_confidence ON beliefs(confidence)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_beliefs_updated ON beliefs(updated_at)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_beliefs_user_id ON beliefs(user_id)")
+
+        # Auto-migrate old schemas missing new columns
+        for col, coltype in [
+            ("user_id", "TEXT"),
+            ("salience", "REAL DEFAULT 0.5"),
+            ("half_life_days", "REAL DEFAULT 7.0"),
+            ("evidence_for", "TEXT DEFAULT '[]'"),
+            ("evidence_against", "TEXT DEFAULT '[]'"),
+            ("links", "TEXT DEFAULT '[]'"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE beliefs ADD COLUMN {col} {coltype}")
+            except Exception:
+                pass  # column already exists
 
         await db.commit()
         self._initialized = True
@@ -105,6 +126,12 @@ class SQLiteBeliefStore(BeliefStoreABC):
             "created_at": belief.created_at.isoformat(),
             "updated_at": belief.updated_at.isoformat(),
             "session_id": getattr(belief, "session_id", None),
+            "user_id": str(uid) if (uid := getattr(belief, "user_id", None)) else None,
+            "salience": belief.salience,
+            "half_life_days": belief.half_life_days,
+            "evidence_for": json.dumps([e.model_dump(mode='json') if hasattr(e, 'model_dump') else e for e in belief.evidence_for]),
+            "evidence_against": json.dumps([e.model_dump(mode='json') if hasattr(e, 'model_dump') else e for e in belief.evidence_against]),
+            "links": json.dumps([l.model_dump(mode='json') if hasattr(l, 'model_dump') else l for l in belief.links]),
         }
 
     def _row_to_belief(self, row: aiosqlite.Row) -> Belief:
@@ -116,6 +143,11 @@ class SQLiteBeliefStore(BeliefStoreABC):
             timestamp=datetime.fromisoformat(row["origin_timestamp"]) if row["origin_timestamp"] else datetime.now(timezone.utc),
             last_reinforced=datetime.fromisoformat(row["origin_last_reinforced"]) if row["origin_last_reinforced"] else None,
         )
+
+        # deserialize ecology fields
+        evidence_for_raw = json.loads(row["evidence_for"]) if row["evidence_for"] else []
+        evidence_against_raw = json.loads(row["evidence_against"]) if row["evidence_against"] else []
+        links_raw = json.loads(row["links"]) if row["links"] else []
 
         belief = Belief(
             id=UUID(row["id"]),
@@ -132,11 +164,21 @@ class SQLiteBeliefStore(BeliefStoreABC):
             score=row["score"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
+            salience=row["salience"] if row["salience"] is not None else 0.5,
+            half_life_days=row["half_life_days"] if row["half_life_days"] is not None else 7.0,
         )
 
-        # Add session_id if present
+        # restore session_id / user_id
         if row["session_id"]:
             object.__setattr__(belief, "session_id", row["session_id"])
+        if row["user_id"]:
+            object.__setattr__(belief, "user_id", row["user_id"])
+
+        # restore evidence and links from JSON
+        from backend.core.models.belief import EvidenceRef, BeliefLink
+        belief.evidence_for = [EvidenceRef(**e) if isinstance(e, dict) else e for e in evidence_for_raw]
+        belief.evidence_against = [EvidenceRef(**e) if isinstance(e, dict) else e for e in evidence_against_raw]
+        belief.links = [BeliefLink(**l) if isinstance(l, dict) else l for l in links_raw]
 
         return belief
 

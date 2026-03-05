@@ -1,7 +1,7 @@
 # Author: Bradley R. Kinnard
 """
-DecayControllerAgent - applies time-based confidence decay and manages status transitions.
-Implements spec 3.4.1 (decay formula) and 3.4.2 (status thresholds).
+DecayControllerAgent - applies time-based confidence + salience decay, manages status transitions.
+Implements spec 3.4.1 (decay formula), 3.4.2 (status thresholds), and salience half-life dynamics.
 """
 
 import logging
@@ -23,6 +23,8 @@ class DecayEvent:
     belief_id: UUID
     old_confidence: float
     new_confidence: float
+    old_salience: float
+    new_salience: float
     old_status: BeliefStatus
     new_status: BeliefStatus
     hours_elapsed: float
@@ -49,11 +51,13 @@ class DecayControllerAgent:
         threshold_decaying: float = settings.confidence_threshold_decaying,
         threshold_deprecated: float = settings.confidence_threshold_deprecated,
         stale_days: int = settings.stale_days_deprecated,
+        dormancy_salience_threshold: float = settings.dormancy_salience_threshold,
     ):
         self._decay_rate = decay_rate
         self._threshold_decaying = threshold_decaying
         self._threshold_deprecated = threshold_deprecated
         self._stale_days = stale_days
+        self._dormancy_threshold = dormancy_salience_threshold
 
         # per-cluster or per-tag overrides
         self._rate_overrides: dict[str, float] = {}
@@ -105,10 +109,7 @@ class DecayControllerAgent:
     def _determine_status(
         self, belief: Belief, new_confidence: float
     ) -> BeliefStatus:
-        """
-        Apply status transition rules per spec 3.4.2.
-        Status transitions are one-way (except via mutation).
-        """
+        """Apply status transition rules per spec 3.4.2, extended for dormancy."""
         current = belief.status
 
         # already deprecated stays deprecated
@@ -118,6 +119,18 @@ class DecayControllerAgent:
         # mutated stays mutated
         if current == BeliefStatus.Mutated:
             return BeliefStatus.Mutated
+
+        # dormancy check: low salience but not dead
+        if (
+            belief.salience < self._dormancy_threshold
+            and new_confidence >= self._threshold_deprecated
+            and current not in (BeliefStatus.Dormant,)
+        ):
+            return BeliefStatus.Dormant
+
+        # dormant beliefs stay dormant unless reawakened externally
+        if current == BeliefStatus.Dormant and belief.salience < self._dormancy_threshold:
+            return BeliefStatus.Dormant
 
         # check stale unused beliefs
         age_days = _hours_since(belief.created_at) / 24
@@ -131,27 +144,32 @@ class DecayControllerAgent:
         if new_confidence < self._threshold_decaying:
             return BeliefStatus.Decaying
 
-        # active or decaying can stay active if confidence recovers
         return BeliefStatus.Active
 
     def apply_decay(self, belief: Belief) -> Optional[DecayEvent]:
-        """
-        Apply decay to a single belief based on time since last reinforcement.
-        Updates belief in place. Returns event if any change occurred.
-        """
+        """Apply confidence + salience decay to a single belief. Updates in place."""
         # don't decay deprecated or mutated beliefs
         if belief.status in (BeliefStatus.Deprecated, BeliefStatus.Mutated):
             return None
 
-        hours = _hours_since(belief.origin.last_reinforced)
+        # decay clock starts from last touch (reinforce or creation, whichever is newer)
+        # prevents catastrophic decay when last_reinforced is epoch (never reinforced)
+        anchor = max(belief.origin.last_reinforced, belief.created_at)
+        hours = _hours_since(anchor)
         if hours <= 0:
             return None
 
         rate = self._get_effective_rate(belief)
         old_confidence = belief.confidence
+        old_salience = belief.salience
         old_status = belief.status
 
         new_confidence = self._compute_new_confidence(old_confidence, hours, rate)
+
+        # salience decays independently via half-life
+        belief.decay_salience(hours)
+        new_salience = belief.salience
+
         new_status = self._determine_status(belief, new_confidence)
 
         # update belief
@@ -161,13 +179,16 @@ class DecayControllerAgent:
 
         # only emit event if something changed meaningfully
         conf_changed = abs(old_confidence - new_confidence) > 0.001
+        sal_changed = abs(old_salience - new_salience) > 0.001
         status_changed = old_status != new_status
 
-        if conf_changed or status_changed:
+        if conf_changed or sal_changed or status_changed:
             return DecayEvent(
                 belief_id=belief.id,
                 old_confidence=old_confidence,
                 new_confidence=new_confidence,
+                old_salience=old_salience,
+                new_salience=new_salience,
                 old_status=old_status,
                 new_status=new_status,
                 hours_elapsed=hours,

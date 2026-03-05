@@ -239,6 +239,8 @@ class PerceptionAgent:
     def _from_chat(self, text: str) -> list[str]:
         """Extract beliefs from conversational input."""
         out = []
+        # Track duplicates within THIS call only (not across users/requests)
+        seen_this_call: set[str] = set()
         for sent in self._split_sentences(text):
             sent = sent.strip()
             lower = sent.lower()
@@ -261,13 +263,9 @@ class PerceptionAgent:
                 continue
 
             key = sent.lower()
-            if key in self._seen:
-                self._seen.move_to_end(key)
+            if key in seen_this_call:
                 continue
-
-            self._seen[key] = True
-            if len(self._seen) > self._cache_size:
-                self._seen.popitem(last=False)
+            seen_this_call.add(key)
 
             out.append(sent)
         return out
@@ -288,6 +286,47 @@ class PerceptionAgent:
         # Questions aren't beliefs
         if text.strip().endswith("?"):
             return False
+
+        # Reject repetitive gibberish (same word repeated 3+ times)
+        unique_words = set(w for w in words if len(w) > 1)
+        if len(unique_words) <= 1 and len(words) > 3:
+            return False
+
+        # Reject SQL/code injection attempts
+        code_patterns = [
+            r"\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE)\s+(FROM|INTO|TABLE|INDEX)\b",
+            r"<\s*script\b",
+            r"--\s*$",
+            r"\b(eval|exec|import\s+os|subprocess)\b",
+        ]
+        for pat in code_patterns:
+            if re.search(pat, text, re.IGNORECASE):
+                return False
+
+        # Vague filler phrases that aren't beliefs
+        filler_phrases = [
+            r"^hmm\b",
+            r"^(let me|lemme)\s+(think|see|check|consider)",
+            r"^(hang on|hold on|wait)\b",
+            r"^(sure|fine|great|good|nice|cool|awesome|perfect|right|alright)\s*(,|!|\.)?$",
+            r"^(got it|i see|makes sense|fair enough|sounds? good|no worries|never mind)",
+            r"^(moving on|anyway|anyhow|so\b)",
+        ]
+        for pat in filler_phrases:
+            if re.search(pat, lower):
+                return False
+
+        # Conversational directives — requests to change topic, not facts about the user
+        directive_patterns = [
+            r"^let['\u2019]?s\s+(talk|discuss|chat|move|switch|go|get|start)",
+            r"^(tell|teach|explain|describe|show)\s+me\s+(about|how|what|why)",
+            r"^(can|could|would)\s+(you|we)\s+(talk|discuss|explain|tell)",
+            r"^(i['\u2019]?d\s+like|i\s+want)\s+to\s+(talk|discuss|hear|learn|know)\b",
+            r"^(how\s+does?|how\s+do|what\s+is|what\s+are|why\s+does?)\b",
+        ]
+        for pat in directive_patterns:
+            if re.search(pat, lower):
+                return False
 
         # Pure filler
         filler_only = {"um", "uh", "hmm", "huh", "oh", "ah", "yeah", "yep", "nope", "ok", "okay"}
@@ -317,9 +356,11 @@ class PerceptionAgent:
                 return False
 
         # Personal fact patterns - "I am", "I have", "My X is", "I like", etc.
+        # Allow optional adverbs (recently, just, also, always, never, etc.) between "I" and verb
+        _ADV = r"(?:recently|just|also|always|never|still|already|finally|actually|currently|usually|often|sometimes|definitely|rarely)?\s*"
         personal_patterns = [
             r"\bmy\s+\w+\s+(is|are|was|were)\b",  # My name is, My dogs are
-            r"\bi\s+(am|was|have|had|love|like|prefer|enjoy|hate|dislike|want|need)\b",
+            rf"\bi\s+{_ADV}(am|was|have|had|love|like|prefer|enjoy|hate|dislike|want|need|work|play|live|study|teach|drive|read|write|speak|sing|cook|travel|run|manage|own|build|design|switched|graduated|moved|find|found|collect|picked|bought|sold|adopted|started|broke|finished|got|made|met|joined|left|quit|learned|tried)\b",
             r"\bi['\u2019]m\b",  # I'm
             r"\bi['\u2019]ve\b",  # I've
             r"\b(he|she|it|they)\s+(is|are|was|were|has|have)\b",
@@ -492,7 +533,7 @@ class PerceptionAgent:
         if not words:
             return False
 
-        for prefix in ("please ", "can you ", "could you ", "would you "):
+        for prefix in ("please ", "can you ", "could you ", "would you ", "let's ", "lets "):
             if lower.startswith(prefix):
                 return True
 

@@ -5,6 +5,8 @@ import {
     BeliefEvent,
     ChatSession,
     createChatSession,
+    deleteAllChatSessions,
+    deleteChatSession,
     getChatSession,
     listChatSessions,
     sendChatMessage
@@ -147,6 +149,27 @@ export function ChatInterface({ token }: ChatInterfaceProps) {
     } catch {}
   };
 
+  const handleDeleteSession = async (id: string) => {
+    try {
+      await deleteChatSession(id);
+      if (sessionId === id) {
+        setSessionId(null);
+        setMessages([]);
+      }
+      await loadSessions();
+    } catch {}
+  };
+
+  const handleDeleteAllSessions = async () => {
+    try {
+      await deleteAllChatSessions();
+      setSessionId(null);
+      setMessages([]);
+      setSessions([]);
+      setBeliefEvents([]);
+    } catch {}
+  };
+
   const handleSend = async () => {
     if (!inputValue.trim() || isLoading) return;
 
@@ -230,6 +253,8 @@ export function ChatInterface({ token }: ChatInterfaceProps) {
         currentSessionId={sessionId}
         onNewSession={startNewSession}
         onSelectSession={loadSession}
+        onDeleteSession={handleDeleteSession}
+        onDeleteAllSessions={handleDeleteAllSessions}
       />
 
       <div className="flex-1 flex flex-col min-w-0">

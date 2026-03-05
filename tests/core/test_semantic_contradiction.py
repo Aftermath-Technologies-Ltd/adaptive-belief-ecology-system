@@ -521,6 +521,16 @@ class TestIntegrationWithAuditor:
                 self.tags = []
                 self.tension = 0.0
                 self.status = "active"
+                self.salience = 0.5
+                self.links = []
+
+            def add_link(self, target_id, relation, weight=1.0):
+                self.links.append({"target_id": target_id, "relation": relation, "weight": weight})
+
+            def get_links(self, relation=None):
+                if relation is None:
+                    return self.links
+                return [l for l in self.links if l["relation"] == relation]
 
         agent = ContradictionAuditorAgent()
         model = MagicMock()

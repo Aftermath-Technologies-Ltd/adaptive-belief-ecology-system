@@ -3,7 +3,7 @@
 
 import { ChatSession } from '@/lib/api';
 import clsx from 'clsx';
-import { ChevronLeft, MessageSquare, Plus, Settings } from 'lucide-react';
+import { ChevronLeft, MessageSquare, Plus, Settings, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 import { SettingsModal } from './SettingsModal';
 
@@ -14,6 +14,8 @@ interface SidebarProps {
   currentSessionId: string | null;
   onNewSession: () => void;
   onSelectSession: (id: string) => void;
+  onDeleteSession: (id: string) => void;
+  onDeleteAllSessions: () => void;
 }
 
 export function Sidebar({
@@ -23,8 +25,11 @@ export function Sidebar({
   currentSessionId,
   onNewSession,
   onSelectSession,
+  onDeleteSession,
+  onDeleteAllSessions,
 }: SidebarProps) {
   const [showSettings, setShowSettings] = useState(false);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
 
   if (!isOpen) return null;
 
@@ -62,31 +67,69 @@ export function Sidebar({
         ) : (
           <div className="space-y-1">
             {sessions.map((session) => (
-              <button
+              <div
                 key={session.id}
-                onClick={() => onSelectSession(session.id)}
                 className={clsx(
-                  "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors text-left",
+                  "group w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors",
                   session.id === currentSessionId
                     ? "bg-[#1a1a1a] text-neutral-200 border border-[#2a2a2a]"
                     : "text-neutral-500 hover:bg-[#141414] hover:text-neutral-300"
                 )}
               >
-                <MessageSquare className="w-4 h-4 flex-shrink-0" />
-                <span className="truncate flex-1">
-                  {session.turn_count > 0
-                    ? `${session.turn_count} messages`
-                    : 'New chat'
-                  }
-                </span>
-              </button>
+                <button
+                  onClick={() => onSelectSession(session.id)}
+                  className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                >
+                  <MessageSquare className="w-4 h-4 flex-shrink-0" />
+                  <span className="truncate flex-1">
+                    {session.turn_count > 0
+                      ? `${session.turn_count} messages`
+                      : 'New chat'
+                    }
+                  </span>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDeleteSession(session.id); }}
+                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 hover:text-red-400 rounded transition-all text-neutral-600"
+                  title="Delete conversation"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
             ))}
           </div>
         )}
       </div>
 
       {/* Footer */}
-      <div className="p-3 border-t border-[#1f1f1f]">
+      <div className="p-3 border-t border-[#1f1f1f] space-y-1">
+        {sessions.length > 0 && (
+          confirmClearAll ? (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
+              <span className="text-xs text-red-400 flex-1">Delete all chats?</span>
+              <button
+                onClick={() => { onDeleteAllSessions(); setConfirmClearAll(false); }}
+                className="px-2 py-0.5 text-xs bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded transition-colors"
+              >
+                Yes
+              </button>
+              <button
+                onClick={() => setConfirmClearAll(false)}
+                className="px-2 py-0.5 text-xs text-neutral-500 hover:text-neutral-300 rounded transition-colors"
+              >
+                No
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmClearAll(true)}
+              className="flex items-center gap-2 px-3 py-2 w-full rounded-lg text-neutral-600 hover:bg-red-500/10 hover:text-red-400 text-sm transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Clear all chats
+            </button>
+          )
+        )}
         <button
           onClick={() => setShowSettings(true)}
           className="flex items-center gap-2 px-3 py-2 w-full rounded-lg text-neutral-500 hover:bg-[#141414] hover:text-neutral-400 text-sm transition-colors"

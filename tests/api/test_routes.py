@@ -11,9 +11,13 @@ from backend.core.models.belief import Belief, BeliefStatus, OriginMetadata
 
 
 @pytest.fixture(autouse=True)
-def reset_state():
-    """Reset singletons before each test."""
+def reset_state(monkeypatch):
+    """Reset singletons and force in-memory store for test isolation."""
+    from backend.storage import InMemoryBeliefStore
+    import backend.core.deps as deps
     reset_singletons()
+    # Directly inject fresh in-memory store, bypassing settings.storage_backend
+    deps._belief_store = InMemoryBeliefStore()
     yield
     reset_singletons()
 
@@ -133,7 +137,7 @@ class TestAgentsAPI:
         assert response.status_code == 200
         data = response.json()
         assert "agents" in data
-        assert len(data["agents"]) == 14  # default schedule
+        assert len(data["agents"]) == 15  # default schedule (14 + consolidation)
 
     def test_get_agent(self, client):
         response = client.get("/agents/perception")

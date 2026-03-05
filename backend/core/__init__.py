@@ -3,7 +3,7 @@ Core exports: models, config, and dependencies.
 """
 
 # models
-from .models.belief import Belief, BeliefStatus, OriginMetadata
+from .models.belief import Belief, BeliefStatus, OriginMetadata, EvidenceRef, BeliefLink
 from .models.snapshot import Snapshot, SnapshotMetadata
 
 # config and dependencies
@@ -15,6 +15,8 @@ __all__ = [
     "Belief",
     "BeliefStatus",
     "OriginMetadata",
+    "EvidenceRef",
+    "BeliefLink",
     # snapshot models
     "Snapshot",
     "SnapshotMetadata",

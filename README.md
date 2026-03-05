@@ -1,53 +1,144 @@
-# ABES - Adaptive Belief Ecology System
+<p align="center">
+  <img src="docs/assets/hero-banner.svg" alt="ABES: Adaptive Belief Ecology System" width="100%" />
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-698%20passing-brightgreen.svg)]()
+<p align="center">
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+" /></a>
+  <img src="https://img.shields.io/badge/tests-821%20passing-brightgreen.svg" alt="Tests" />
+  <img src="https://img.shields.io/badge/cognitive%20eval-825%2F1000%20(82.5%25)-blue.svg" alt="Cognitive Eval" />
+</p>
 
-A research platform for belief ecology: treating beliefs as living, evolving entities rather than static memory entries.
+A cognitive memory architecture where beliefs live, decay, contradict, mutate, and consolidate as a living ecology. Not a wrapper. Not RAG. Not a prompt cache. A headless memory engine for autonomous AI systems.
+
+---
+
+## Try in 2 Minutes
+
+```bash
+git clone https://github.com/moonrunnerkc/adaptive-belief-ecology-system.git
+cd adaptive-belief-ecology-system
+
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+### Start the Cognitive Engine
+
+```bash
+# Terminal 1: Start the headless cognitive engine
+PYTHONPATH=$PWD uvicorn backend.api.app:app --host 0.0.0.0 --port 8000
+```
+
+```bash
+# Terminal 2: Inject a belief programmatically
+curl -X POST http://localhost:8000/beliefs \
+  -H "Content-Type: application/json" \
+  -d '{"content": "System target is alpha-node-4", "confidence": 0.9, "source": "agent"}'
+
+# Inspect the resulting ecology state
+curl http://localhost:8000/beliefs | python3 -m json.tool
+```
+
+Or use the CLI to watch the full ecology pipeline in action:
+
+```bash
+abes demo --headless    # 12-turn scripted sequence: creation, reinforcement, contradiction, mutation
+abes inspect            # Dump live belief stack, tension, mutations
+```
+
+### Optional: Start the Visualizer
+
+The included Next.js frontend is a debugging tool for watching the ecology evolve visually. It is not the product.
+
+```bash
+cd frontend && npm install && npm run dev   # http://localhost:3000/chat
+```
+
+### Quick Verification
+
+```bash
+abes verify-quick       # 80-prompt cognitive smoke test + ecology health check
+abes verify-determinism # Deterministic state comparison across repeated runs
+```
+
+### Optional: Jump-Start with Seed Beliefs
+
+```bash
+abes seed               # Loads 5 example beliefs via API
+abes inspect            # Confirm they landed
+```
 
 ---
 
 ## Overview
 
-ABES is an experimental cognitive memory architecture for AI systems. Most memory systems use key-value stores or vector retrieval. This one is different. Beliefs here are first-class objects that decay over time, accumulate tension when they contradict each other, get reinforced when similar evidence shows up, and mutate or get deprecated when tension gets too high.
+ABES is a headless cognitive memory engine for autonomous AI systems. It consumes data streams, resolves conflicts, and maintains state without human intervention. External agents feed beliefs through the REST API; a pipeline of 15 specialized agents processes them each iteration: extracting candidates, reinforcing evidence, decaying stale beliefs, detecting contradictions, triggering mutations, and consolidating near-duplicates.
 
-A pipeline of specialized agents processes beliefs each iteration. There's also an optional RL layer to tune system parameters automatically.
+Beliefs are first-class objects that decay over time, accumulate tension when they contradict each other, get reinforced when similar evidence appears, and mutate or get deprecated when tension crosses thresholds. Each belief carries salience (attentional energy) that decays via half-life, an evidence ledger tracking what supports or attacks it, and graph edges linking it to related beliefs. Low-salience beliefs hibernate instead of dying. An optional RL layer tunes system parameters automatically.
 
-This is a research prototype. It works, but it's not production-ready.
+Every new session starts completely empty. No preloaded beliefs, no canned data. Everything builds from ingested context, so the ecology takes shape from real inputs. This is intentional: it proves the system is real.
+
+This is a research prototype. It works, but it is not production-ready.
 
 ---
 
-## The Chatbot
+## Interactive Debugger
 
-ABES includes a conversational chatbot that demonstrates the belief ecology in action. The chatbot supports multiple LLM backends (local Ollama or cloud providers) and uses your stored beliefs to provide personalized responses.
+ABES is designed to run headlessly as the foundational memory engine for autonomous AI systems. It consumes data streams, resolves conflicts, and maintains state without human intervention. The included chat interface is not the product. It is an interactive visual debugger built to let researchers manually inject beliefs and watch the ecology evolve in real time.
 
-### Why the chatbot exists
+The debugger supports multiple LLM backends (local Ollama, OpenAI, Anthropic, or hybrid routing) and uses stored beliefs to generate responses, making the internal ecology state visible.
 
-The chat interface is the primary way to interact with and test the belief ecology. When you talk to it:
+### What happens when context is ingested
 
-1. Your messages get parsed by the perception agent to extract belief candidates
+When an agent payload is ingested through the API:
+
+1. Incoming context streams are parsed by the perception agent to extract belief candidates
 2. New beliefs are created with initial confidence scores
-3. Existing similar beliefs get reinforced (confidence boost)
-4. Contradicting beliefs accumulate tension
-5. The LLM generates responses using your belief context
+3. Existing similar beliefs get reinforced (confidence boost, salience boost, evidence added)
+4. Contradicting beliefs accumulate tension via confidence-weighted scoring
+5. The LLM generates responses using a salience-ranked belief stack as context
 
-This lets you watch the ecology evolve in real time. Tell it a fact a few times and watch the confidence climb. Then contradict yourself and watch the tension spike.
+This lets you observe the ecology evolve. Inject the same fact twice and watch the confidence climb. Inject a contradiction and watch tension spike, then mutation kick in.
 
 ### How to use it
 
-1. Start the backend: `PYTHONPATH=$PWD uvicorn backend.api.app:app --port 8000`
-2. Start the frontend: `cd frontend && npm run dev`
-3. Start Ollama: `ollama serve` (if using local LLM)
-4. Open http://localhost:3000/chat
+**Headless (recommended for integration):**
+```bash
+# Inject beliefs via API, observe ecology via inspect
+curl -X POST http://localhost:8000/beliefs \
+  -H "Content-Type: application/json" \
+  -d '{"content": "Target system is node-alpha-4", "confidence": 0.9, "source": "agent"}'
 
-Try these interactions:
-- "The project deadline is next Friday"
-- "The budget is $50,000 for Q1"
-- "What do you know about the project?"
-- "Actually the deadline is next Monday" (creates tension with previous belief)
+abes inspect        # Dump current ecology state
+```
 
-The Activity panel on the right shows belief events as they happen.
+**With visual debugger (for development):**
+```bash
+abes chat           # Starts backend + frontend debugger
+```
+
+**Manual (if you need more control):**
+```bash
+PYTHONPATH=$PWD uvicorn backend.api.app:app --port 8000   # Terminal 1
+cd frontend && npm run dev                                 # Terminal 2
+ollama serve                                               # Terminal 3 (if using local LLM)
+```
+
+Open http://localhost:3000/chat. The Activity panel on the right shows belief events as they happen.
+
+### The Demo
+
+`abes demo` runs a scripted 12-turn ingestion sequence that deliberately triggers every major ecological dynamic:
+
+1. Injects a fact (belief creation)
+2. Repeats it (reinforcement, confidence boost, salience bump)
+3. Contradicts it (tension spike, mutation trigger)
+4. Queries recall (stack selection, salience-ranked retrieval)
+5. Builds a preference cluster (evidence ledger growth)
+6. Tests general knowledge (context relevance, no belief injection)
+
+Each turn prints the raw ecology events: what was created, reinforced, tensioned, or mutated. The script lives at [examples/demo_conversation.json](examples/demo_conversation.json) and can be customized.
 
 ---
 
@@ -55,52 +146,64 @@ The Activity panel on the right shows belief events as they happen.
 
 | Feature | Source | Tests |
 |---------|--------|-------|
-| Belief data model (confidence, tension, status, lineage) | [backend/core/models/belief.py](backend/core/models/belief.py) | [test_bel_loop.py](tests/core/test_bel_loop.py) |
-| 14-phase agent scheduler | [backend/agents/scheduler.py](backend/agents/scheduler.py) | [test_scheduler.py](tests/agents/test_scheduler.py) |
+| Belief data model (confidence, salience, tension, evidence ledger, graph edges) | [backend/core/models/belief.py](backend/core/models/belief.py) | [test_belief_ecology_extensions.py](tests/core/test_belief_ecology_extensions.py) |
+| 15-phase agent scheduler | [backend/agents/scheduler.py](backend/agents/scheduler.py) | [test_scheduler.py](tests/agents/test_scheduler.py) |
 | Perception agent (text to belief candidates) | [backend/agents/perception.py](backend/agents/perception.py) | [test_perception.py](tests/agents/test_perception.py) |
-| Reinforcement agent (boost on similar evidence) | [backend/agents/reinforcement.py](backend/agents/reinforcement.py) | [test_reinforcement.py](tests/agents/test_reinforcement.py) |
-| Decay controller (time-based confidence reduction) | [backend/agents/decay_controller.py](backend/agents/decay_controller.py) | [test_decay_controller.py](tests/agents/test_decay_controller.py) |
-| Contradiction auditor (semantic rules + embedding gate) | [backend/agents/contradiction_auditor.py](backend/agents/contradiction_auditor.py) | [test_contradiction_auditor.py](tests/agents/test_contradiction_auditor.py) |
+| Reinforcement agent (boost + salience + evidence + graph edges) | [backend/agents/reinforcement.py](backend/agents/reinforcement.py) | [test_reinforcement.py](tests/agents/test_reinforcement.py) |
+| Decay controller (confidence + salience half-life + dormancy) | [backend/agents/decay_controller.py](backend/agents/decay_controller.py) | [test_decay_salience.py](tests/agents/test_decay_salience.py) |
+| Contradiction auditor (semantic rules + confidence-weighted tension) | [backend/agents/contradiction_auditor.py](backend/agents/contradiction_auditor.py) | [test_tension_formula.py](tests/agents/test_tension_formula.py) |
+| Consolidation agent (merge near-duplicates + compress lineage) | [backend/agents/consolidation.py](backend/agents/consolidation.py) | [test_consolidation.py](tests/agents/test_consolidation.py) |
+| Belief stack selection (attention-based context window) | [backend/core/bel/stack.py](backend/core/bel/stack.py) | [test_belief_stack.py](tests/core/test_belief_stack.py) |
 | Mutation engineer (conflict-triggered belief modification) | [backend/agents/mutation_engineer.py](backend/agents/mutation_engineer.py) | [test_mutation_engineer.py](tests/agents/test_mutation_engineer.py) |
 | Semantic clustering | [backend/core/bel/clustering.py](backend/core/bel/clustering.py) | [test_clustering.py](tests/core/test_clustering.py) |
+| Semantic contradiction detection (14 rules, 6 categories) | [backend/core/bel/semantic_contradiction.py](backend/core/bel/semantic_contradiction.py) | [test_semantic_contradiction.py](tests/core/test_semantic_contradiction.py) |
+| NLI fallback detector (DeBERTa) | [backend/core/bel/nli_detector.py](backend/core/bel/nli_detector.py) | [test_nli_detector.py](tests/core/test_nli_detector.py) |
 | RL environment (15D state, 7D action) | [backend/rl/environment.py](backend/rl/environment.py) | [test_environment.py](tests/rl/test_environment.py) |
 | Evolution Strategy trainer | [backend/rl/training.py](backend/rl/training.py) | [test_training.py](tests/rl/test_training.py) |
 | FastAPI REST + WebSocket API | [backend/api/app.py](backend/api/app.py) | [test_routes.py](tests/api/test_routes.py) |
-| Chat service with Ollama LLM | [backend/chat/service.py](backend/chat/service.py) | Manual testing |
+| Ingestion pipeline with multi-provider LLM | [backend/chat/service.py](backend/chat/service.py) | [test_response_validator.py](tests/chat/test_response_validator.py) |
+| Response validation + safety sanitizer | [backend/chat/response_validator.py](backend/chat/response_validator.py) | [test_response_validator.py](tests/chat/test_response_validator.py) |
+| Hybrid LLM routing (local + cloud) | [backend/llm/hybrid_provider.py](backend/llm/hybrid_provider.py) | [test_query_classifier.py](tests/llm/test_query_classifier.py) |
+| 1000-prompt cognitive eval suite | [tests/cognitive/eval/](tests/cognitive/eval/) | [test_prompt_bank.py](tests/cognitive/test_prompt_bank.py) |
 | Next.js frontend | [frontend/](frontend/) | Manual testing |
 
 ---
 
 ## Architecture
 
-```
-Frontend (Next.js) --> REST/WebSocket --> FastAPI Backend (:8000)
-                                              |
-                    +-----------+-------------+-----------+
-                    |           |             |           |
-               Chat Service  Agent Scheduler  RL Environment
-               (Ollama LLM)  (14 phases)      (Gymnasium)
-                    |           |             |
-                    +-----------+-------------+
-                                |
-                       In-Memory Belief Store
-```
-
-### Agent Pipeline
-
-```
-Perception --> Creation --> Reinforcement --> Decay --> Contradiction -->
-Mutation --> Resolution --> Relevance --> RL Policy --> Consistency -->
-Safety --> Baseline --> Narrative --> Experiment
-```
+<p align="center">
+  <img src="docs/assets/architecture.svg" alt="ABES System Architecture" width="100%" />
+</p>
 
 Each agent is independently tested. See [backend/agents/](backend/agents/).
+
+### Ingestion Pipeline
+
+When an agent payload arrives at `POST /chat/message`, the ingestion pipeline runs 9 stages:
+
+<p align="center">
+  <img src="docs/assets/ingestion-pipeline.svg" alt="Ingestion Pipeline" width="100%" />
+</p>
+
+### API Surface
+
+| Group | Base Path | Key Endpoints |
+|-------|-----------|--------------|
+| Auth | `/auth` | `POST /register`, `POST /login`, `GET /me` |
+| Ingestion | `/chat` | `POST /message`, `POST /sessions`, `GET /sessions/{id}`, `WS /ws` |
+| Beliefs | `/beliefs` | `GET /`, `GET /{id}`, `GET /{id}/ecology`, `POST /`, `PATCH /{id}`, `POST /{id}/reinforce`, `POST /clear` |
+| BEL Loop | `/bel` | `POST /iterate`, `GET /stats`, `GET /health` |
+| Agents | `/agents` | CRUD for agent scheduling |
+| Clusters | `/clusters` | Semantic cluster management |
+| Snapshots | `/snapshots` | Snapshot history |
+
+The `/beliefs/{id}/ecology` endpoint returns full internal state: salience, evidence ledger, graph links, half-life, tension, and status.
 
 ---
 
 ## Installation
 
-Requirements: Python 3.10+, Node.js 18+ (frontend), Ollama (chat)
+Requirements: Python 3.10+, Node.js 18+ (visual debugger), Ollama (optional, for local LLM)
 
 ### Backend
 
@@ -110,93 +213,151 @@ cd adaptive-belief-ecology-system
 
 python -m venv .venv
 source .venv/bin/activate
-pip install numpy pydantic pydantic-settings msgpack sentence-transformers httpx
-pip install pytest pytest-asyncio
-
-export PYTHONPATH=$PWD
+pip install -e ".[dev]"
 ```
 
-### Frontend
+This installs the `abes` CLI globally in your virtualenv. No `PYTHONPATH` export needed.
+
+Dependencies from [pyproject.toml](pyproject.toml):
+- `numpy>=2.0`, `pydantic>=2.9`, `pydantic-settings>=2.4`
+- `msgpack>=1.0`, `sentence-transformers>=5.0`
+- `spacy>=3.8`, `transformers>=4.40`
+- `click>=8.0`, `httpx>=0.27`, `uvicorn>=0.30`
+- Dev: `pytest>=9.0`, `pytest-asyncio>=1.3`
+
+### Visual Debugger (Optional)
 
 ```bash
 cd frontend
 npm install
 ```
 
-### Ollama
+Frontend deps: Next.js, React, @tanstack/react-query, Recharts, D3, Lucide React.
+
+### Ollama (for local LLM)
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ollama pull llama3.1:8b-instruct-q4_0
 ```
 
+### Docker
+
+```bash
+docker compose up                              # Cognitive engine only (LLM_PROVIDER=none)
+docker compose up --profile ui                 # Engine + visual debugger
+docker compose up --profile llm --profile ui   # Full stack with Ollama
+```
+
+For persistence across restarts: `STORAGE_BACKEND=sqlite docker compose up`
+
 ---
 
-## Quick Start
+## CLI Reference
 
-Terminal 1 (Backend):
+All commands are available after `pip install -e .`:
+
+| Command | Description |
+|---------|-------------|
+| `abes demo` | Run scripted 12-turn ingestion showing ecology dynamics |
+| `abes chat` | Launch backend + visual debugger for manual testing |
+| `abes seed` | Load optional seed beliefs from JSON |
+| `abes inspect` | Display current belief state, tension, mutations |
+| `abes verify-quick` | Run 80-prompt cognitive smoke test |
+| `abes verify-determinism` | Check state reproducibility across repeated runs |
+
+### abes demo
+
 ```bash
-source .venv/bin/activate
-PYTHONPATH=$PWD uvicorn backend.api.app:app --host 0.0.0.0 --port 8000
+abes demo              # Full demo with backend + visual debugger
+abes demo --headless   # Backend only, no browser
+abes demo --no-pause   # Skip delays between turns
+abes demo --script my_conversation.json   # Custom script
 ```
 
-Terminal 2 (Frontend):
+### abes inspect
+
 ```bash
-cd frontend && npm run dev
+abes inspect           # Pretty-printed ecology summary
+abes inspect --top 30  # Show more beliefs
+abes inspect --json-out | jq .  # Machine-readable output
 ```
 
-Terminal 3 (Ollama):
+### abes verify-quick
+
 ```bash
-ollama serve
+abes verify-quick              # Default: 80 stratified prompts
+abes verify-quick --prompts 200  # Larger sample
 ```
 
-Open http://localhost:3000/chat
+### abes verify-determinism
+
+```bash
+abes verify-determinism            # 20 prompts x 3 runs
+abes verify-determinism --runs 5   # More runs for higher confidence
+```
 
 ---
 
 ## Configuration
 
-All parameters are set via environment variables or [backend/core/config.py](backend/core/config.py).
+All parameters are set via environment variables or [backend/core/config.py](backend/core/config.py). Uses `pydantic-settings` for validation.
 
 ### Core Settings
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `STORAGE_BACKEND` | memory | `memory` or `sqlite` for persistence |
-| `DATABASE_URL` | sqlite+aiosqlite:///./data/abes.db | SQLite database path |
-| `DECAY_PROFILE` | moderate | Presets: `aggressive`, `moderate`, `conservative`, `persistent` |
-| `DECAY_RATE` | 0.995 | Per-hour confidence multiplier (overridden by profile) |
-| `EMBEDDING_MODEL` | all-MiniLM-L6-v2 | Sentence transformer model |
+| `STORAGE_BACKEND` | `memory` | `memory` or `sqlite` for persistence |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./data/abes.db` | SQLite database path |
+| `DECAY_PROFILE` | `moderate` | Presets: `aggressive`, `moderate`, `conservative`, `persistent` |
+| `DECAY_RATE` | `0.995` | Per-hour confidence multiplier (overridden by profile) |
+| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Sentence transformer model |
+| `ENVIRONMENT` | `development` | Runtime environment |
 
 ### LLM Settings
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `LLM_PROVIDER` | ollama | Provider: `ollama`, `openai`, `anthropic`, `hybrid`, `none` |
-| `LLM_FALLBACK_ENABLED` | true | Fall back to raw beliefs if LLM fails |
-| `OLLAMA_MODEL` | llama3.1:8b-instruct-q4_0 | Ollama model name |
-| `OPENAI_API_KEY` | | OpenAI API key (required for `openai` or `hybrid` mode) |
-| `OPENAI_MODEL` | gpt-4o-mini | OpenAI model name |
+| `LLM_PROVIDER` | `ollama` | Provider: `ollama`, `openai`, `anthropic`, `hybrid`, `none` |
+| `LLM_FALLBACK_ENABLED` | `true` | Fall back to raw beliefs if LLM fails |
+| `LLM_TEMPERATURE` | `0.7` | Generation temperature |
+| `LLM_MAX_TOKENS` | `1024` | Max response tokens |
+| `LLM_CONTEXT_BELIEFS` | `15` | Max beliefs fed to LLM context |
+| `OLLAMA_MODEL` | `llama3.1:8b-instruct-q4_0` | Ollama model name |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
+| `OLLAMA_TIMEOUT` | `120.0` | Ollama request timeout (seconds) |
+| `OPENAI_API_KEY` | | OpenAI API key (required for `openai` or `hybrid`) |
+| `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model name |
 | `ANTHROPIC_API_KEY` | | Anthropic API key |
-| `ANTHROPIC_MODEL` | claude-3-haiku-20240307 | Anthropic model name |
+| `ANTHROPIC_MODEL` | `claude-3-haiku-20240307` | Anthropic model name |
 
-**Hybrid Mode**: Set `LLM_PROVIDER=hybrid` to use local Ollama for belief-grounded responses and OpenAI only for real-time queries (weather, traffic, news, stock prices). This saves API costs while still enabling live information lookup.
+**Hybrid Mode**: Set `LLM_PROVIDER=hybrid` to use local Ollama for belief-grounded responses and OpenAI only for real-time queries (weather, traffic, news, stock prices). Saves API costs while still enabling live information lookup.
 
 ### Belief Ecology Settings
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `CONFIDENCE_THRESHOLD_DECAYING` | 0.3 | Threshold to mark belief as decaying |
-| `TENSION_THRESHOLD_MUTATION` | 0.5 | Trigger mutation proposals |
-| `CLUSTER_SIMILARITY_THRESHOLD` | 0.7 | Min similarity to join cluster |
-| `REINFORCEMENT_SIMILARITY_THRESHOLD` | 0.7 | Min similarity for reinforcement |
-| `MAX_ACTIVE_BELIEFS` | 10000 | Safety limit |
+| `CONFIDENCE_THRESHOLD_DECAYING` | `0.3` | Mark belief as decaying |
+| `CONFIDENCE_THRESHOLD_DEPRECATED` | `0.1` | Mark belief as deprecated |
+| `TENSION_THRESHOLD_MUTATION` | `0.5` | Trigger mutation proposals |
+| `TENSION_THRESHOLD_RESOLUTION` | `0.6` | Trigger conflict resolution |
+| `TENSION_CAP` | `10.0` | Maximum tension value |
+| `CLUSTER_SIMILARITY_THRESHOLD` | `0.7` | Min similarity to join cluster |
+| `REINFORCEMENT_SIMILARITY_THRESHOLD` | `0.55` | Min similarity for reinforcement |
+| `REINFORCEMENT_CONFIDENCE_BOOST` | `0.1` | Confidence added per reinforcement |
+| `REINFORCEMENT_COOLDOWN_SECONDS` | `60` | Min seconds between reinforcements |
+| `MAX_REINFORCED_CONFIDENCE` | `0.95` | Hard ceiling on reinforced confidence |
+| `MAX_ACTIVE_BELIEFS` | `10000` | Safety limit |
+| `BELIEF_STACK_SIZE` | `50` | Max beliefs in active reasoning stack |
+| `DEFAULT_HALF_LIFE_DAYS` | `7.0` | Default salience half-life |
+| `SALIENCE_BOOST_ON_REINFORCE` | `0.15` | Salience added per reinforcement |
+| `DORMANCY_SALIENCE_THRESHOLD` | `0.05` | Salience below which beliefs go dormant |
+| `DEDUPE_SIMILARITY_THRESHOLD` | `0.95` | Threshold for near-duplicate detection |
+| `MAX_MUTATION_DEPTH` | `5` | Max lineage chain depth before compression |
 
 ---
 
 ## Testing and Verification
-
-We ran a full verification suite to make sure everything works as claimed. Here's what we tested and what the results mean.
 
 ### Unit Tests
 
@@ -204,217 +365,268 @@ We ran a full verification suite to make sure everything works as claimed. Here'
 PYTHONPATH=$PWD pytest tests/ -q
 ```
 
-Current status: **672 passed, 0 failed**
+Current status: **807 passed, 0 failed**
 
-| Suite | Files | What it covers |
-|-------|-------|----------------|
-| tests/agents/ | 18 | All agent modules |
-| tests/core/ | 5 | BEL loop, clustering, timeline, RL integration |
-| tests/rl/ | 3 | Environment, policy, training |
-| tests/api/ | 1 | REST endpoints |
-| tests/verification/ | 3 | Determinism, offline operation, conflict resolution |
+| Suite | Tests | Files | What it covers |
+|-------|-------|-------|----------------|
+| tests/agents/ | 423 | 23 | All 15 agent modules + scheduler + consolidation |
+| tests/core/ | 204 | 9 | BEL loop, clustering, belief stack, ranking, timeline, RL integration, semantic contradiction, NLI |
+| tests/rl/ | 50 | 3 | Environment, policy, training |
+| tests/benchmark/ | 33 | 3 | Baseline comparisons, scenarios |
+| tests/storage/ | 24 | 2 | Snapshot queries, persistence |
+| tests/api/ | 21 | 2 | REST endpoints |
+| tests/metrics/ | 20 | 2 | Decay metrics, drift metrics |
+| tests/chat/ | 11 | 1 | Response validator |
+| tests/llm/ | 9 | 1 | Query classifier |
+| tests/verification/ | 6 | 4 | Determinism, offline operation, conflict resolution |
+| tests/cognitive/ | 6 | 1 | Prompt bank structural validation |
 
 ### Verification Experiments
 
-We ran these experiments to produce hard evidence for our claims:
+Produce hard evidence for system claims:
 
 ```bash
 PYTHONPATH=$PWD python experiments/run_all.py
 ```
 
-All experiments passed. Here's what each one proves:
-
 **Determinism Check** ([results/determinism_check.json](results/determinism_check.json))
 - Ran the same input sequence twice with seed 12345
-- Both runs produced identical state hashes: `077ac8e32f721ef8dbb51a3613adf8e1288e9e0c02422af918327956c7dbcbe1`
-- Different seeds (12345 vs 12346) produce different hashes
-- This proves: given the same inputs and seed, you get byte-for-byte identical outputs
+- Both runs produced identical state hashes
+- Different seeds produce different hashes
+- Proves: given the same inputs and seed, you get byte-for-byte identical outputs
 
 **Offline Operation** ([results/offline_verification.json](results/offline_verification.json))
 - Blocked all network sockets at runtime
-- Ran 5 core components (belief ingest, conflict resolution, baselines, metrics, decay simulation)
+- Ran 5 core components (belief ingest, conflict resolution, baselines, metrics, decay)
 - Detected 0 network calls
-- This proves: the core belief processing works without any network access
+- Proves: core belief processing works without network access
 
 **Conflict Resolution** ([results/conflict_resolution_log.json](results/conflict_resolution_log.json))
 - Tested 4 conflict scenarios with different confidence levels and ages
 - Resolution actions are deterministic: WEAKEN for confidence gaps, DEFER for equal strength
 - 9 total cases documented with case IDs and confidence scores
-- This proves: conflict resolution follows consistent rules, not random decisions
 
 **Drift Comparison** ([results/drift_comparison.json](results/drift_comparison.json))
-- Ran 23-turn conversation with reinforcement, contradictions, and duplicates
-- Compared three systems: plain LLM (no memory), append-only memory, belief ecology
+- Ran 23-turn ingestion sequence comparing three systems: plain LLM (no memory), append-only memory, belief ecology
 - Append-only accumulated 17 beliefs and 2 contradictions
 - Belief ecology maintained 0 active contradictions (tension-based resolution worked)
-- This proves: the ecology manages contradictions instead of just accumulating them
 
 **Decay Sweep** ([results/decay_sweep/](results/decay_sweep/))
 - Tested decay factors: 0.999, 0.995, 0.99, 0.97, 0.95
 - At 0.999: 4 beliefs retained, 9 dropped
 - At 0.995 and below: 0 beliefs retained, 13 dropped
-- This proves: decay factor significantly affects retention. Default of 0.995 is aggressive.
+- Default of 0.995 is aggressive by design
 
 **Contradiction Benchmark** ([results/contradiction_benchmark.json](results/contradiction_benchmark.json))
-- Tested semantic rule-based detector against 70-case curated corpus
-- Corpus inspired by SNLI, MultiNLI, SICK benchmarks (Bowman 2015, Williams 2018, Marelli 2014)
-- See [Contradiction Detection](#contradiction-detection) section for detailed results
+- 70-case curated corpus inspired by SNLI, MultiNLI, SICK benchmarks
+- See the [Contradiction Detection](#contradiction-detection) section for detailed results
 
-### Evidence File Hashes
+### Cognitive Stress Test (200-Prompt Suite)
 
-For reproducibility, here are the SHA256 hashes of our evidence files:
+End-to-end test sending 200 graded prompts through the full ABES pipeline. Each prompt is evaluated against deterministic pass/fail criteria.
 
+```bash
+PYTHONPATH=$PWD python tests/cognitive/test_200_stress.py
 ```
-ecfce79e1b80ab06a9c813e3233f634352d4064b760511c6b1b0bb5ff85a829c  results/drift_comparison.json
-dcffb0e0f13ff4c28125e61d208cdc2d4c4fa8d36086aa56a3fdaa082d6db0dc  results/determinism_check.json
-2be674788c8b5168348ae3e7f1157c807b18b65001ec581a45e501264aac2b95  results/offline_verification.json
-391bfd85ce01eb5fa75b393ca2a69986e2114051db31403bc7d02efa522bfe26  results/conflict_resolution_log.json
-d4dd4f5c4a777eac6d2954cd25030f74c9a4e7f27275f1c5e19fa21795d247c5  results/decay_sweep/decay_0.995.json
+
+**Result: 200/200 (100.0%) across 3 consecutive runs on Llama 3.1 8B**
+
+| Category | Prompts | Score | What it tests |
+|----------|---------|-------|---------------|
+| Identity | 13 | 100% | Name recall, self-identification, persona consistency |
+| Belief Creation (Personal) | 14 | 100% | Facts about the ingesting agent (job, location, family, pets) |
+| Belief Creation (Preferences) | 12 | 100% | Likes, dislikes, favorites |
+| Reinforcement | 14 | 100% | Repeated facts boost confidence, 3-step sequences |
+| Deduplication | 12 | 100% | Near-identical messages don't create duplicate beliefs |
+| Noise Rejection | 13 | 100% | Filler phrases, gibberish, injection attempts, code payloads |
+| Memory Recall | 14 | 100% | Retrieve stored facts across topics |
+| Context Relevance | 11 | 100% | Factual queries answered without injecting stored beliefs |
+| Contradiction Handling | 15 | 100% | Contradicted facts update, tension mechanics |
+| Safety | 14 | 100% | Prompt injection, system prompt extraction, jailbreak attempts |
+| Multi-Fact Extraction | 11 | 100% | Multiple beliefs from compound sentences |
+| General Knowledge | 12 | 100% | Non-personal questions answered accurately |
+| Session Isolation | 10 | 100% | Beliefs don't leak between session scopes |
+| Conversational Coherence | 11 | 100% | Natural dialogue flow, follow-up questions |
+| Edge Cases | 13 | 100% | Empty messages, single words, unicode, URLs |
+| Belief Lifecycle | 11 | 100% | Create, recall, reinforce, update, recall chain |
+
+Source: [tests/cognitive/test_200_stress.py](tests/cognitive/test_200_stress.py)
+Artifact: [results/stress_test_200_results.json](results/stress_test_200_results.json)
+
+### Cognitive AI Battery (50-Prompt Suite)
+
+Research-grade evaluation of human-like cognitive capabilities grounded in peer-reviewed literature. All 50 prompts target specific constructs. All assertions are deterministic boolean predicates.
+
+```bash
+PYTHONPATH=$PWD python tests/cognitive/test_cognitive_battery.py
 ```
+
+**Result: 50/50 (100.0%) across 3 consecutive runs on Llama 3.1 8B**
+
+| Domain | Prompts | Score | Framework |
+|--------|---------|-------|-----------|
+| Episodic Memory | 7 | 100% | Tulving 1972 |
+| Semantic Memory | 6 | 100% | Collins & Quillian 1969 |
+| Working Memory | 6 | 100% | Baddeley & Hitch 1974 |
+| Selective Attention | 5 | 100% | Broadbent 1958, Posner 1980 |
+| Language Comprehension | 7 | 100% | Grice 1975, Searle 1975 |
+| Deductive & Inductive Reasoning | 7 | 100% | Wason 1966, Gentner 1983 |
+| Social Cognition | 6 | 100% | Premack & Woodruff 1978, Kohlberg 1958 |
+| Self-Correction | 6 | 100% | AGM 1985 |
+
+Source: [tests/cognitive/test_cognitive_battery.py](tests/cognitive/test_cognitive_battery.py)
+Artifact: [results/cognitive_battery_50_results.json](results/cognitive_battery_50_results.json)
+
+### 1000-Prompt Cognitive Evaluation Suite
+
+A research-grade evaluation with 1000 prompts across 8 cognitive domains, 40 constructs, and 35 long-horizon decay scenarios. Uses semantic cosine similarity scoring (all-MiniLM-L6-v2) instead of keyword matching, plus ecology invariant auditing to verify internal belief mechanics.
+
+```bash
+# Validate prompt bank structure (no API needed)
+python -m tests.cognitive.eval.run --dry-run
+
+# Full 1000-prompt run against live backend
+python -m tests.cognitive.eval.run
+
+# Quick smoke test (stratified across all domains)
+python -m tests.cognitive.eval.run --max 24
+
+# Target specific domains
+python -m tests.cognitive.eval.run --domains reasoning social_cognition
+
+# Verbose logging
+python -m tests.cognitive.eval.run --max 50 -v
+```
+
+**Baseline Result: 825/1000 (82.5%), 95% CI [0.800, 0.848]**
+
+Mean cosine similarity: 0.875. Zero ecology violations.
+
+| Domain | Passed | Rate | Mean Cosine | Constructs |
+|--------|--------|------|-------------|------------|
+| Episodic Memory | 121/125 | 96.8% | 0.93 | encoding, temporal/spatial retrieval, temporal ordering, source monitoring |
+| Working Memory | 118/125 | 94.4% | 0.92 | multi-item encoding, item retrieval, interference resistance, feature binding, updating |
+| Semantic Memory | 116/125 | 92.8% | 0.93 | fact encoding, categorical inference, property retrieval, source discrimination, knowledge update |
+| Selective Attention | 107/125 | 85.6% | 0.89 | target encoding, distractor filtering, inhibition, relevance gating, focused retrieval |
+| Self-Correction | 103/125 | 82.4% | 0.91 | belief revision, iterative revision, long-horizon decay, minimal change, revision verification |
+| Reasoning | 99/125 | 79.2% | 0.85 | modus ponens, modus tollens, analogical, transitive inference, causal reasoning |
+| Language Comprehension | 88/125 | 70.4% | 0.83 | disambiguation, figurative language, indirect speech, presupposition, scalar implicature |
+| Social Cognition | 73/125 | 58.4% | 0.75 | false belief, perspective taking, emotional inference, intention attribution, moral reasoning |
+
+The social_cognition shortfall is primarily from moral_reasoning (20 of 52 failures): the LLM deflects ethical dilemmas with refusal responses instead of reasoning through them. This is an LLM-level behavior, not a belief ecology defect.
+
+**Top failure constructs**: moral_reasoning (20), scalar_implicature (12), disambiguation (11), focused_retrieval (9), false_belief (9), analogical_reasoning (8).
+
+#### Eval Architecture
+
+The 1000-prompt suite lives in [tests/cognitive/eval/](tests/cognitive/eval/) and consists of 7 modules:
+
+| Module | Purpose |
+|--------|---------|
+| [prompt_bank.py](tests/cognitive/eval/prompt_bank.py) | 1000 prompts: 8 domains, 40 constructs, gold answers, forbidden semantics, ecology checks |
+| [scorer.py](tests/cognitive/eval/scorer.py) | Semantic cosine similarity scoring via all-MiniLM-L6-v2 embeddings |
+| [ecology_auditor.py](tests/cognitive/eval/ecology_auditor.py) | 7 belief-state invariant checks: creation, reinforcement, tension, mutation, salience decay, dormancy, orphan links |
+| [stats.py](tests/cognitive/eval/stats.py) | Clopper-Pearson exact binomial CI (pure Python, no scipy), per-domain distributions, test-retest correlation |
+| [reporter.py](tests/cognitive/eval/reporter.py) | Terminal summary, Markdown report, JSON artifact generation |
+| [harness.py](tests/cognitive/eval/harness.py) | Async runner with session grouping, stratified sampling, long-horizon decay cycling |
+| [run.py](tests/cognitive/eval/run.py) | CLI entry point: `--dry-run`, `--max`, `--domains`, `--constructs`, `--concurrency`, `--threshold` |
+
+Each prompt carries: `domain`, `construct`, `gold_answer`, `forbidden_semantics`, `ecology_checks`, `session_group`, `is_setup`, `horizon`, and an academic `reference`. Setup prompts establish context (470 total); probe prompts test recall and reasoning (530 total). Long-horizon prompts (35 total) inject decay cycles between setup and probe to test salience persistence.
+
+Scoring uses cosine similarity between the LLM response and the gold answer embedding. Pass threshold: 0.70. Forbidden answers are checked with a 0.60 ceiling. The ecology auditor runs invariant checks against pre/post belief snapshots fetched via `GET /beliefs/{id}/ecology`.
+
+Artifact: [results/cognitive_eval/baseline_1000.json](results/cognitive_eval/baseline_1000.json)
 
 ---
 
-## Recent Updates (2026-01-30)
+## Belief Model
 
-All 638 tests passing. Here's what was fixed and added:
+<p align="center">
+  <img src="docs/assets/belief-lifecycle.svg" alt="Belief Lifecycle State Machine" width="100%" />
+</p>
 
-### Context Enhancements
+Each belief is a structured object with these core fields:
 
-1. **Hierarchical Belief Context**
-   - Session-first lookup: beliefs from current conversation shown as "FROM THIS CONVERSATION"
-   - User-wide fallback: beliefs from previous sessions shown as "FROM PREVIOUS CONVERSATIONS"
-   - User isolation: `user_id` is the ceiling - no cross-user data leakage
-   - LLM now distinguishes "just told me" vs "remembered from before"
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Auto-generated |
+| `content` | str | The belief text |
+| `confidence` | float [0, 1] | System certainty (ceiling: 0.95 via Bayesian update) |
+| `tension` | float >= 0 | Contradiction pressure from auditor |
+| `salience` | float [0, 1] | Attentional energy, decays via `s(t) = s0 * 0.5^(t / half_life)` |
+| `status` | Enum | `active`, `decaying`, `dormant`, `mutated`, `deprecated` |
+| `half_life_days` | float | Salience decay rate (default 7) |
+| `evidence_for` | list[EvidenceRef] | Supporting evidence (content, weight, source_id) |
+| `evidence_against` | list[EvidenceRef] | Attacking evidence |
+| `evidence_balance` | float | sum(support weights) minus sum(attack weights) |
+| `links` | list[BeliefLink] | Graph edges: `reinforces` or `contradicts` with target_id and weight |
+| `parent_id` | UUID or None | Mutation lineage |
+| `user_id` | UUID or None | Owner (scoped per agent identity) |
+| `session_id` | str or None | Which ingestion session created it |
+| `origin` | OriginMetadata | Source and `last_reinforced` timestamp |
 
-2. **Numeric Contradiction Detection**
-   - Detects conflicting numeric values (e.g., "40 degrees" vs "70 degrees")
-   - Extracts numbers with unit context (degrees, dollars, percent, etc.)
-   - Triggers tension when same-topic statements have >20% numeric difference
-   - Reinforcement agent skips beliefs with conflicting numeric values
+### Key Formulas
 
-3. **Hybrid LLM Provider** (`LLM_PROVIDER=hybrid`)
-   - Routes queries between local Ollama and cloud OpenAI
-   - Local Ollama: belief-grounded responses, general conversation
-   - OpenAI: real-time queries (weather, traffic, news, stocks, search)
-   - Pattern-based detection for live information needs
-   - Saves API costs by only using cloud when necessary
+<p align="center">
+  <img src="docs/assets/tension-model.svg" alt="Tension and Contradiction Model" width="100%" />
+</p>
 
-### Bug Fixes
+<p align="center">
+  <img src="docs/assets/salience-decay.svg" alt="Salience Decay Curve" width="65%" />
+</p>
 
-4. **Mutation engineer confidence calculation**
-   - Mutated beliefs preserve relative confidence with tension-based penalty
-   - Formula: `original - 0.1 - (tension * 0.1)`, floor 0.3
+**Bayesian Confidence Update** (on new evidence):
+```
+posterior = 0.7 * evidence_weight + 0.3 * prior_confidence
+capped at min(0.95, posterior)
+```
 
-5. **RL environment action decoding**
-   - Fixed boundary condition in test assertion (> changed to >=)
+**Ranking** (for belief stack selection):
+```
+score = 0.30*confidence + 0.30*relevance + 0.20*salience + 0.10*recency + 0.10*tension
+```
 
-6. **Circular import in storage/core modules**
-   - Moved imports to function level with TYPE_CHECKING guard
-
-7. **ContradictionDetectedEvent enriched**
-   - Added: contradicting_belief_id, belief_content, contradicting_content, similarity_score
-
-### Infrastructure
-
-8. **GitHub Actions CI Pipeline** (`.github/workflows/ci.yml`)
-   - Runs pytest on push/PR to main
-   - Includes lint checks with ruff
-
-9. **SQLite Persistence** (`STORAGE_BACKEND=sqlite`)
-   - Beliefs survive server restarts
-   - Async support via aiosqlite
-
-10. **Session Isolation** (`session_id` on beliefs)
-    - Multi-user support ready
-    - Filter beliefs by session
-
-11. **Multiple LLM Providers**
-    - Ollama (default), OpenAI, Anthropic, Hybrid
-    - Set via `LLM_PROVIDER` env var
-
-12. **User Authentication**
-    - JWT-based login/register system
-    - SQLite persistence for user accounts
-    - Protected routes requiring authentication
-    - Beliefs associated with user accounts
-
----
-
-## Authentication
-
-ABES includes a complete user authentication system:
-
-### Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/auth/register` | POST | Create new account |
-| `/auth/login` | POST | Login, returns JWT token |
-| `/auth/me` | GET | Get current user (requires token) |
-| `/auth/logout` | POST | Logout (client discards token) |
-
-### How It Works
-
-1. Register with email, name, password (min 6 chars)
-2. Login to receive JWT token
-3. Include token in `Authorization: Bearer <token>` header
-4. Beliefs are associated with your user ID
-
-### Frontend
-
-The Next.js frontend handles auth automatically:
-- Redirects to `/login` if not authenticated
-- Stores token in localStorage
-- Shows user name and logout button in header
-
-### User Data Storage
-
-User accounts are stored in `data/users.db` (SQLite). This file is in `.gitignore` and will never be committed.
+**Belief Stack Selection**:
+```
+score = 0.35*salience + 0.30*relevance + 0.20*recency + 0.15*graph_spread
+```
 
 ---
 
 ## Contradiction Detection
 
-The contradiction detection system uses semantic rule-based analysis with embedding similarity as a gate. When two beliefs have high embedding similarity, the semantic detector analyzes them for logical conflicts.
+The contradiction detection system uses semantic rule-based analysis with embedding similarity as a gate.
 
 ### Architecture
 
 ```
 Embedding Similarity Gate (threshold 0.5)
-         │
-         ▼
+         |
+         v
    Semantic Parser (spaCy)
-         │
-    ┌────┴────┐
-    │         │
+         |
+    +----+----+
+    |         |
 Proposition A  Proposition B
-    │         │
-    └────┬────┘
-         ▼
-   14 Contradiction Rules
-         │
-    ┌────┴────────────────────────────────────┐
-    │  NEG_DIRECT         QUANT_UNIVERSAL_VS_NONE    │
-    │  NEG_PRED_FLIP      QUANT_UNIVERSAL_VS_EXIST   │
-    │  MOD_NECESSARY_VS_IMPOSSIBLE  ENT_ATTRIBUTE    │
-    │  MOD_FACTUAL_VS_POSSIBLE      ENT_EXCLUSIVE    │
-    │  TEMP_SAME_ANCHOR   NUM_VALUE_CONFLICT         │
-    │  NUM_UNIT_CONVERTED NUM_COMPARATOR_CONFLICT    │
-    └─────────────────────────────────────────┘
-         │
-         ▼
+    |         |
+    +----+----+
+         |
+         v
+   14 Contradiction Rules (6 categories)
+         |
+         v
    Confidence Score + Reason Codes
+         |
+         v
+   NLI Fallback (DeBERTa) for uncertain cases
 ```
 
 ### Benchmark Results
 
-Tested against 70-case curated corpus inspired by:
-- **SNLI** (Stanford Natural Language Inference) - Bowman et al. 2015
-- **MultiNLI** (Multi-Genre NLI) - Williams et al. 2018
-- **SICK** (Sentences Involving Compositional Knowledge) - Marelli et al. 2014
+Tested against a 70-case curated corpus inspired by SNLI (Bowman 2015), MultiNLI (Williams 2018), and SICK (Marelli 2014):
 
-| Category | Legacy Detector | Semantic Detector | Δ |
-|----------|-----------------|-------------------|---|
+| Category | Legacy Detector | Semantic Detector | Delta |
+|----------|-----------------|-------------------|-------|
 | Quantifiers | 54.5% | **81.8%** | +27.3% |
 | Numeric/Units | 66.7% | **83.3%** | +16.7% |
 | Entity/Attribute | 76.9% | **84.6%** | +7.7% |
@@ -422,60 +634,154 @@ Tested against 70-case curated corpus inspired by:
 | Modality | 72.7% | 45.5% | -27.3% |
 | Temporal | 63.6% | 36.4% | -27.3% |
 
-**Overall**: Legacy 71.4% → Semantic 70.0%
+**Overall**: Legacy 71.4%, Semantic 70.0%. The semantic detector excels where explicit rules exist (quantifiers, numerics) but struggles where spaCy parsing is ambiguous (modality, temporal). The NLI fallback (DeBERTa) handles uncertain cases.
 
-The semantic detector excels where explicit rules exist (quantifiers, numerics, entity attributes) but struggles where spaCy parsing is ambiguous (modality, temporal). The system falls back to legacy heuristics when semantic parsing fails.
+Source: [backend/core/bel/semantic_contradiction.py](backend/core/bel/semantic_contradiction.py), [data/contradiction_corpus.json](data/contradiction_corpus.json)
 
-### Source Files
+---
 
-| File | Description |
-|------|-------------|
-| [backend/core/bel/semantic_contradiction.py](backend/core/bel/semantic_contradiction.py) | Semantic detector implementation |
-| [backend/agents/contradiction_auditor.py](backend/agents/contradiction_auditor.py) | Integration with belief auditing |
-| [data/contradiction_corpus.json](data/contradiction_corpus.json) | 70-case curated corpus |
-| [tests/core/test_semantic_contradiction.py](tests/core/test_semantic_contradiction.py) | 43 unit tests |
-| [experiments/contradiction_benchmark.py](experiments/contradiction_benchmark.py) | Benchmark script |
-| [results/contradiction_benchmark.json](results/contradiction_benchmark.json) | Benchmark artifact |
+## Authentication
 
-### Run the Benchmark
+| Endpoint | Method | Auth Required | Description |
+|----------|--------|---------------|-------------|
+| `/auth/register` | POST | No | Create account (email, name, password min 6 chars) |
+| `/auth/login` | POST | No | Returns JWT token (168h expiration) |
+| `/auth/me` | GET | Yes | Current user info |
+| `/auth/logout` | POST | Yes | Client discards token |
+
+Include token as `Authorization: Bearer <token>` header. Ingestion endpoints via `/chat/message` require authentication. Belief and BEL endpoints do not.
+
+Agent accounts are stored in `data/users.db` (SQLite). This file is in `.gitignore`.
+
+The Next.js visual debugger handles auth automatically: redirects to `/login` if not authenticated, stores token in localStorage.
+
+---
+
+## Frontend (Visual Debugger)
+
+Next.js app at [frontend/](frontend/) for observing ecology state. This is a development tool, not the product.
+
+| Page | Purpose |
+|------|---------|
+| `/chat` | Interactive debugger with belief activity panel |
+| `/login` | Authentication |
+| `/register` | Account creation |
+| `/` | Landing/dashboard |
+
+Components: `ChatInterface`, `BeliefActivityPanel`, `BeliefList`, `BeliefCard`, `ClusterView`, `StatsPanel`, `SettingsModal`, `Sidebar`.
+
+Dependencies: Next.js, React, @tanstack/react-query, Recharts, D3, Lucide React, clsx.
 
 ```bash
-PYTHONPATH=$PWD python experiments/contradiction_benchmark.py
+cd frontend
+npm install
+npm run dev    # development server on :3000
+npm run build  # production build
+```
+
+---
+
+## Project Structure
+
+```
+backend/
+  cli.py           # abes CLI entrypoint (click)
+  agents/          # 15 agent modules + scheduler (19 .py files)
+  api/
+    routes/        # auth, beliefs, bel, chat, clusters, agents, snapshots
+    app.py         # FastAPI app with CORS, router mounts
+    schemas.py     # Pydantic request/response models
+  auth/            # JWT authentication
+  chat/
+    service.py     # Ingestion pipeline orchestration (656 lines)
+    response_validator.py
+  core/
+    config.py      # ABESSettings (pydantic-settings, 60+ parameters)
+    deps.py        # Dependency injection
+    events.py      # Event system
+    bel/           # BEL loop, clustering, decay, ranking, contradiction, stack, timeline
+    models/        # belief.py, snapshot.py, user.py
+  llm/             # ollama, openai, anthropic, hybrid providers + query classifier
+  metrics/         # Export + tracking
+  rl/              # Gymnasium environment, policy, ES training
+  storage/         # In-memory, SQLite, snapshot queries, user store
+  util/            # Shared utilities
+
+tests/             # 821 tests across 60+ files
+  agents/          # 423 tests (23 files)
+  core/            # 204 tests (9 files)
+  rl/              # 50 tests (3 files)
+  benchmark/       # 33 tests (3 files)
+  storage/         # 24 tests (2 files)
+  api/             # 21 tests (2 files)
+  metrics/         # 20 tests (2 files)
+  chat/            # 11 tests (1 file)
+  llm/             # 9 tests (1 file)
+  verification/    # 6 tests (4 files)
+  cognitive/
+    test_200_stress.py         # 200-prompt end-to-end stress test
+    test_cognitive_battery.py  # 50-prompt cognitive AI battery
+    test_chat_cognitive.py     # Chat cognitive tests
+    test_prompt_bank.py        # 6 structural validation tests
+    eval/                      # 1000-prompt evaluation suite (7 modules)
+
+examples/
+  demo_conversation.json       # 12-turn scripted demo
+  seed_beliefs.json            # 5 optional starter beliefs
+
+experiments/       # Contradiction benchmark, decay sweep, drift benchmark
+results/           # All experiment and eval artifacts (JSON)
+baselines/         # Append-only memory, plain LLM runner
+beliefs/           # Conflict resolution logic
+configs/           # Configuration files
+data/              # Contradiction corpus (70 cases)
+docs/              # Architecture docs, agent docs
+frontend/          # Next.js visual debugger (8 components, 4 pages)
+interfaces/        # Belief ingest interface
+metrics/           # Decay and drift metrics
+scripts/           # Utility scripts
+
+Dockerfile          # Backend container
+docker-compose.yml  # Full stack orchestration
 ```
 
 ---
 
 ## Limitations
 
-No major limitations remain. All previously documented limitations have been resolved:
-
-| Previous Limitation | Resolution |
-|---------------------|------------|
-| Rule-based contradiction detection weak on modality/temporal | NLI model fallback (DeBERTa) for uncertain cases |
-| LLM responses may contradict beliefs | Response validator with claim extraction and regeneration |
-| Hybrid routing uses regex patterns | Zero-shot classifier with regex fallback |
-
-See the implementation files for details:
-- [nli_detector.py](backend/core/bel/nli_detector.py) - NLI fallback
-- [response_validator.py](backend/chat/response_validator.py) - Response validation
-- [query_classifier.py](backend/llm/query_classifier.py) - Zero-shot query routing
+| Area | Status | Detail |
+|------|--------|--------|
+| Modality/temporal contradiction detection | Partial | Semantic detector scores 45.5% and 36.4% on these categories; NLI fallback helps but is not perfect |
+| Moral reasoning in eval | Weak | LLM refuses to engage with ethical dilemmas, causing 58.4% on social_cognition domain |
+| Storage | In-memory default | SQLite available via `STORAGE_BACKEND=sqlite` but in-memory is default; data does not survive restarts without it |
+| Scale testing | Not done | Tested up to ~2000 beliefs; behavior at 10,000+ is untested |
+| Multi-agent concurrency | Untested | Auth and agent scoping exist but have not been load-tested |
 
 ---
 
 ## Roadmap
 
-Not yet implemented:
-
-- [ ] Belief Explorer UI
-- [ ] Document ingestion service
-- [ ] Benchmarks against production memory systems
+- [ ] Belief explorer UI (visual graph of belief relationships)
+- [ ] Document ingestion service (bulk context streams)
+- [ ] Benchmarks against production memory systems (MemGPT, etc.)
+- [ ] Improve moral reasoning eval scores (prompt engineering or model swap)
+- [ ] Load testing at scale (10K+ beliefs)
+- [ ] Multi-agent concurrent ingestion testing
+- [x] CLI entrypoint: `abes demo`, `abes chat`, `abes seed`, `abes inspect`, `abes verify-*`
+- [x] Docker Compose (backend + frontend + Ollama profiles)
+- [x] 1000-prompt cognitive evaluation suite (82.5% baseline, 8 domains, 40 constructs)
+- [x] Belief ecology extensions (salience, evidence ledger, graph edges, dormancy)
+- [x] Consolidation agent (merge near-duplicates, compress lineage)
+- [x] Belief stack selection (attention-based context window)
 - [x] NLI model fallback for contradiction detection
 - [x] Response validation (catch LLM hallucinations)
 - [x] Zero-shot query classification for hybrid routing
-- [x] Semantic contradiction detection (rule-based with 14 rules across 6 categories)
-- [x] Hierarchical context (session → user)
+- [x] Semantic contradiction detection (14 rules, 6 categories)
+- [x] Hierarchical context (session to user)
 - [x] Numeric contradiction detection
 - [x] Hybrid LLM routing
+- [x] 200-prompt cognitive stress test (100% pass rate)
+- [x] 50-prompt cognitive AI battery (100% pass rate)
 
 ---
 

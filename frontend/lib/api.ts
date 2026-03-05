@@ -220,6 +220,10 @@ export async function deleteChatSession(sessionId: string): Promise<void> {
   await fetchJson(`/chat/sessions/${sessionId}`, { method: 'DELETE' });
 }
 
+export async function deleteAllChatSessions(): Promise<{ deleted: number }> {
+  return fetchJson('/chat/sessions', { method: 'DELETE' });
+}
+
 // WebSocket URL for chat
 export function getChatWebSocketUrl(): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

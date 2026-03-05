@@ -186,7 +186,7 @@ class TestApplyDecay:
     def test_decay_applied(self):
         agent = DecayControllerAgent(decay_rate=0.9)
         lr = datetime.now(timezone.utc) - timedelta(hours=10)
-        b = _make_belief(confidence=0.8, last_reinforced=lr)
+        b = _make_belief(confidence=0.8, last_reinforced=lr, created_at=lr)
         old_conf = b.confidence
 
         event = agent.apply_decay(b)
@@ -199,7 +199,7 @@ class TestApplyDecay:
     def test_status_transition_recorded(self):
         agent = DecayControllerAgent(decay_rate=0.5, threshold_decaying=0.3)
         lr = datetime.now(timezone.utc) - timedelta(hours=5)
-        b = _make_belief(confidence=0.5, last_reinforced=lr)
+        b = _make_belief(confidence=0.5, last_reinforced=lr, created_at=lr)
 
         event = agent.apply_decay(b)
 
@@ -222,8 +222,8 @@ class TestProcessBeliefs:
         agent = DecayControllerAgent(decay_rate=0.9)
         lr = datetime.now(timezone.utc) - timedelta(hours=10)
         beliefs = [
-            _make_belief(content="a", confidence=0.8, last_reinforced=lr),
-            _make_belief(content="b", confidence=0.9, last_reinforced=lr),
+            _make_belief(content="a", confidence=0.8, last_reinforced=lr, created_at=lr),
+            _make_belief(content="b", confidence=0.9, last_reinforced=lr, created_at=lr),
         ]
 
         events, modified = await agent.process_beliefs(beliefs)

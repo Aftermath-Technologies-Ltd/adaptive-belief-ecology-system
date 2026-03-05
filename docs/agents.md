@@ -1,12 +1,12 @@
 # Agent Reference
 
-ABES uses 15 specialized agents orchestrated by a scheduler. Each agent has a single responsibility and operates on beliefs or ecology state.
+ABES uses 16 specialized agents orchestrated by a scheduler. Each agent has a single responsibility and operates on beliefs or ecology state.
 
 ---
 
 ## Execution Order
 
-Agents run in a fixed 14-phase order per iteration:
+Agents run in a fixed 15-phase order per iteration:
 
 1. Perception
 2. Creation
@@ -22,6 +22,7 @@ Agents run in a fixed 14-phase order per iteration:
 12. Baseline
 13. Narrative
 14. Experiment
+15. Consolidation
 
 Not all agents run every iteration. The scheduler supports `run_every_n` and conditional execution.
 
@@ -77,7 +78,7 @@ async def create_beliefs(
 
 **Location:** `backend/agents/reinforcement.py`
 
-**Purpose:** Boosts confidence of existing beliefs when new input is similar.
+**Purpose:** Boosts confidence and salience of existing beliefs when new input is similar. Populates evidence ledger and graph edges.
 
 **Key method:**
 ```python
@@ -90,10 +91,13 @@ async def reinforce(
 - Embeds incoming text
 - Finds beliefs with similarity > 0.7
 - Boosts confidence by 0.1 (capped at 0.95)
+- Boosts salience by 0.1 (capped at 1.0)
+- Adds `EvidenceRef(direction="supports")` to reinforced beliefs
+- Adds `reinforces` graph edges between co-reinforced beliefs
 - Updates `last_reinforced` timestamp
 - Respects 60-second cooldown per belief
 
-**Tests:** 15+ tests in `test_reinforcement.py`
+**Tests:** 15+ tests in `test_reinforcement.py`, 4 ecology tests in `test_reinforcement_ecology.py`
 
 ---
 
@@ -101,7 +105,7 @@ async def reinforce(
 
 **Location:** `backend/agents/contradiction_auditor.py`
 
-**Purpose:** Detects conflicting belief pairs and computes per-belief tension.
+**Purpose:** Detects conflicting belief pairs and computes per-belief tension. Populates graph edges.
 
 **Key method:**
 ```python
@@ -112,11 +116,11 @@ async def audit(self, beliefs: list[Belief]) -> list[ContradictionDetectedEvent]
 - Caches embeddings with LRU eviction
 - Computes pairwise cosine similarity
 - Applies negation heuristic (negation words, antonym pairs)
-- Contradiction score = similarity × negation_signal
-- Tension = max(contradiction_score) per belief
+- Tension = similarity × avg_confidence × (0.5 + 0.5 × opposition)
+- Adds `contradicts` graph edges on detected contradictions
 - Emits events when tension crosses threshold
 
-**Tests:** 25+ tests in `test_contradiction_auditor.py`
+**Tests:** 25+ tests in `test_contradiction_auditor.py`, 4 tests in `test_tension_formula.py`
 
 ---
 
@@ -204,26 +208,30 @@ rank = 0.4×relevance + 0.3×confidence + 0.2×recency - 0.1×tension
 
 **Location:** `backend/agents/decay_controller.py`
 
-**Purpose:** Applies time-based confidence decay and manages status transitions.
+**Purpose:** Applies time-based confidence and salience decay, manages status transitions including dormancy.
 
 **Key method:**
 ```python
 def apply_decay(self, belief: Belief) -> Optional[DecayEvent]
 ```
 
-**Formula:**
+**Formulas:**
 ```
 new_confidence = confidence × (decay_rate ^ hours_elapsed)
+new_salience = salience × 0.5 ^ (hours_elapsed / (half_life_days × 24))
 ```
 
 **Status transitions:**
 - `active → decaying`: confidence < 0.3
 - `decaying → deprecated`: confidence < 0.1
+- `active/decaying → dormant`: salience < 0.05
 - `any → deprecated`: use_count = 0 AND age > 30 days
 
-**Supports per-cluster and per-tag rate overrides.**
+**DecayEvent** now includes `old_salience` / `new_salience` fields.
 
-**Tests:** 20+ tests in `test_decay_controller.py`
+Supports per-cluster and per-tag rate overrides.
+
+**Tests:** 20+ tests in `test_decay_controller.py`, 7 tests in `test_decay_salience.py`
 
 ---
 
@@ -370,6 +378,36 @@ def explain_resolution(self, belief_a: Belief, belief_b: Belief, strategy: str) 
 
 ---
 
+### 16. ConsolidationAgent
+
+**Location:** `backend/agents/consolidation.py`
+
+**Purpose:** Merges near-duplicate beliefs within clusters and compresses deep lineage chains.
+
+**Key method:**
+```python
+async def consolidate(
+    self, beliefs: list[Belief]
+) -> tuple[list[ConsolidationEvent], list[Belief], list[Belief]]
+```
+
+**Merge behavior:**
+- Groups beliefs by `cluster_id`
+- Computes pairwise cosine similarity within each cluster
+- Merges pairs with similarity > 0.92 (configurable)
+- Winner = higher `confidence × salience`
+- Winner absorbs loser's evidence ledger and graph edges
+- Loser gets deprecated
+
+**Lineage compression:**
+- Finds chains deeper than `max_depth` (default 5)
+- Tip belief absorbs all ancestor evidence
+- Ancestors get deprecated, tip's `parent_id` reset to None
+
+**Tests:** 8 tests in `test_consolidation.py`
+
+---
+
 ## AgentScheduler
 
 **Location:** `backend/agents/scheduler.py`
@@ -383,10 +421,10 @@ async def run_iteration(self, context: SchedulerContext) -> list[AgentResult]
 ```
 
 **Features:**
-- 14 phases via `AgentPhase` enum
+- 15 phases via `AgentPhase` enum
 - Conditional execution
 - Frequency control (`run_every_n`)
 - Enable/disable per agent
 - Result collection
 
-**Tests:** 20 tests in `test_scheduler.py`
+**Tests:** 20 tests in `test_scheduler.py`, 5 tests in `test_scheduler_consolidation.py`

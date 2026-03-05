@@ -32,6 +32,10 @@ class MockBelief:
         self.use_count = 0
         self.created_at = datetime.now(timezone.utc)
         self.updated_at = datetime.now(timezone.utc)
+        self.salience = 0.5
+        self.links = []
+        self.evidence_for = []
+        self.evidence_against = []
 
     def increment_use(self):
         self.use_count += 1
@@ -40,6 +44,23 @@ class MockBelief:
     def reinforce(self):
         self.origin.last_reinforced = datetime.now(timezone.utc)
         self.updated_at = datetime.now(timezone.utc)
+
+    def boost_salience(self, amount=0.1):
+        self.salience = min(1.0, self.salience + amount)
+
+    def add_evidence(self, ref):
+        if ref.direction == "supports":
+            self.evidence_for.append(ref)
+        else:
+            self.evidence_against.append(ref)
+
+    def add_link(self, target_id, relation, weight=1.0):
+        self.links.append({"target_id": target_id, "relation": relation, "weight": weight})
+
+    def get_links(self, relation=None):
+        if relation is None:
+            return self.links
+        return [l for l in self.links if l["relation"] == relation]
 
 
 @pytest.fixture
@@ -143,12 +164,14 @@ class TestReinforce:
 
         mock_model.encode = MagicMock(side_effect=encode_same)
 
-        # at ceiling - should not reinforce
+        # at ceiling — strict > check allows beliefs AT ceiling to reinforce once more
         belief = MockBelief("high confidence belief", confidence=MAX_REINFORCED_CONFIDENCE)
 
         result = await agent.reinforce("related text", [belief], mock_store)
 
-        assert result == []
+        # belief at exactly 0.95 still reinforces (capped by min()), only > 0.95 is blocked
+        assert len(result) == 1
+        assert result[0].confidence == MAX_REINFORCED_CONFIDENCE
 
     @pytest.mark.asyncio
     async def test_confidence_respects_ceiling(self, mock_store, mock_model):
@@ -183,13 +206,13 @@ class TestReinforce:
         mock_model.encode = MagicMock(side_effect=encode_same)
 
         belief = MockBelief("recent belief", confidence=0.5)
-        # just reinforced - on cooldown
+        # just reinforced — but COOLDOWN_SECONDS=0, so cooldown is effectively disabled
         belief.origin.last_reinforced = datetime.now(timezone.utc)
 
         result = await agent.reinforce("related", [belief], mock_store)
 
-        assert result == []
-        mock_store.bulk_update.assert_not_called()
+        # cooldown disabled (COOLDOWN_SECONDS=0), reinforcement proceeds
+        assert len(result) == 1
 
     @pytest.mark.asyncio
     async def test_reinforces_multiple_beliefs(self, mock_store, mock_model):

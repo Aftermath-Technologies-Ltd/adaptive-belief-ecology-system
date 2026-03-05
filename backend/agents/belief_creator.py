@@ -26,7 +26,29 @@ _TAG_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bconverge\b", re.I), "training.converge"),
 ]
 
-DEDUPE_THRESHOLD = 0.95
+DEDUPE_THRESHOLD = 0.85
+
+_NUM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(%|degrees?|lbs?|kg|miles?|km|dollars?|\$|hours?|years?|members?|people|days?|months?)?", re.I)
+
+
+def _extract_numbers(text: str) -> list[tuple[float, str]]:
+    """Pull (value, unit) pairs from text."""
+    return [(float(m.group(1)), (m.group(2) or "").lower().rstrip("s")) for m in _NUM_RE.finditer(text)]
+
+
+def _has_numeric_conflict(text1: str, text2: str) -> bool:
+    """True if both texts have numbers with >20% difference (same or no unit)."""
+    nums1, nums2 = _extract_numbers(text1), _extract_numbers(text2)
+    if not nums1 or not nums2:
+        return False
+    for n1, u1 in nums1:
+        for n2, u2 in nums2:
+            if u1 != u2 and u1 and u2:
+                continue
+            max_val = max(abs(n1), abs(n2))
+            if max_val > 0 and abs(n1 - n2) / max_val > 0.2:
+                return True
+    return False
 
 
 def _cosine_batch(query: np.ndarray, candidates: np.ndarray) -> np.ndarray:
@@ -78,21 +100,27 @@ class BeliefCreatorAgent:
 
         # track embeddings we've seen - grows as we create beliefs
         seen_embs = None
+        seen_texts: list[str] = []
 
         created: List[Belief] = []
 
         for idx, cand in enumerate(candidates):
             emb = cand_embs[idx]
 
-            # fetch neighbors for this specific candidate
+            # dedupe only against THIS user's beliefs (no cross-user contamination)
             neighbors = []
             try:
                 neighbors = await store.search_by_embedding(emb.tolist(), top_k=5)
+                if user_id:
+                    neighbors = [n for n in neighbors if n.user_id == str(user_id)]
             except Exception:
                 pass
             if not neighbors:
                 try:
-                    neighbors = await store.list(limit=50)
+                    if user_id:
+                        neighbors = await store.list(limit=50, user_id=user_id)
+                    else:
+                        neighbors = await store.list(limit=50)
                 except Exception:
                     pass
 
@@ -110,12 +138,23 @@ class BeliefCreatorAgent:
                 else:
                     check_embs = seen_embs
 
-            # dedupe check
+            # dedupe check - skip if same content, but allow numeric contradictions through
             is_dup = False
             if check_embs is not None and len(check_embs) > 0:
                 sims = _cosine_batch(emb, check_embs)
-                if np.max(sims) > DEDUPE_THRESHOLD:
-                    is_dup = True
+                best_idx = int(np.argmax(sims))
+                if sims[best_idx] > DEDUPE_THRESHOLD:
+                    # find the matching text to check for numeric conflict
+                    all_texts = [n.content for n in neighbors]
+                    if seen_texts:
+                        all_texts.extend(seen_texts)
+                    if best_idx < len(all_texts):
+                        matched_text = all_texts[best_idx]
+                        # numeric contradictions are NOT duplicates
+                        if not _has_numeric_conflict(cand, matched_text):
+                            is_dup = True
+                    else:
+                        is_dup = True
 
             if is_dup:
                 continue
@@ -144,6 +183,7 @@ class BeliefCreatorAgent:
                 seen_embs = emb.reshape(1, -1)
             else:
                 seen_embs = np.vstack([seen_embs, emb])
+            seen_texts.append(cand)
 
         return created
 

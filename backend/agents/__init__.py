@@ -1,7 +1,5 @@
 # Author: Bradley R. Kinnard
-"""
-ABES Multi-Agent Layer - 15 specialized agents per spec 4.1.
-"""
+"""ABES Multi-Agent Layer - 16 specialized agents per spec 4.1 (extended with Consolidation)."""
 
 # Input & Creation agents
 from .perception import PerceptionAgent
@@ -18,6 +16,7 @@ from .resolution_strategist import (
     ResolutionStrategy,
 )
 from .relevance_curator import RelevanceCuratorAgent, RankedBelief
+from .consolidation import ConsolidationAgent, ConsolidationEvent
 
 # RL agents
 from .rl_policy import RLPolicyAgent, EcologyState, PolicyAction
@@ -107,4 +106,7 @@ __all__ = [
     "NarrativeExplainerAgent",
     "Explanation",
     "ExplanationContext",
+    # Consolidation (agent 16)
+    "ConsolidationAgent",
+    "ConsolidationEvent",
 ]

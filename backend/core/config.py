@@ -98,11 +98,19 @@ class ABESSettings(BaseSettings):
     max_active_beliefs: int = 10000
     max_beliefs_per_cluster: int = 500
     max_mutation_depth: int = 5
+
+    # --- Belief Stack (active reasoning set) ---
+    belief_stack_size: int = 50  # max beliefs in active reasoning stack
+    dormancy_salience_threshold: float = 0.05  # below this -> dormant
+
+    # --- Salience ---
+    default_half_life_days: float = 7.0  # salience half-life default
+    salience_boost_on_reinforce: float = 0.15  # bump when reinforced
     max_contradiction_pairs_per_iteration: int = 50000
     max_snapshot_size_mb: int = 50
 
     # --- Reinforcement (agent-level) ---
-    reinforcement_similarity_threshold: float = 0.7
+    reinforcement_similarity_threshold: float = 0.55
     reinforcement_confidence_boost: float = 0.1
     reinforcement_cooldown_seconds: int = 60
     max_reinforced_confidence: float = 0.95

@@ -14,6 +14,8 @@ from ..schemas import (
     BeliefUpdate,
     BeliefResponse,
     BeliefListResponse,
+    BeliefLinkResponse,
+    BeliefEcologyResponse,
 )
 from ...core.deps import get_belief_store
 from ...core.models.belief import Belief, BeliefStatus, OriginMetadata
@@ -90,6 +92,40 @@ async def get_belief(belief_id: UUID):
         raise HTTPException(404, f"Belief {belief_id} not found")
 
     return _belief_to_response(belief)
+
+
+@router.get("/{belief_id}/ecology", response_model=BeliefEcologyResponse)
+async def get_belief_ecology(belief_id: UUID):
+    """Full internal ecology state — salience, evidence, links, dormancy."""
+    store = get_belief_store()
+    belief = await store.get(belief_id)
+
+    if not belief:
+        raise HTTPException(404, f"Belief {belief_id} not found")
+
+    return BeliefEcologyResponse(
+        id=belief.id,
+        content=belief.content,
+        confidence=belief.confidence,
+        status=belief.status.value,
+        tension=belief.tension,
+        salience=belief.salience,
+        half_life_days=belief.half_life_days,
+        evidence_for_count=len(belief.evidence_for),
+        evidence_against_count=len(belief.evidence_against),
+        evidence_balance=belief.evidence_balance,
+        links=[
+            BeliefLinkResponse(
+                target_id=link.target_id,
+                relation=link.relation,
+                weight=link.weight,
+            )
+            for link in belief.links
+        ],
+        link_count=len(belief.links),
+        created_at=belief.created_at,
+        updated_at=belief.updated_at,
+    )
 
 
 @router.post("", response_model=BeliefResponse, status_code=201)

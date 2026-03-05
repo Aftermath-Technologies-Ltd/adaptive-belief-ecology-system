@@ -157,20 +157,22 @@ class TestDeduplication:
 
     @pytest.mark.asyncio
     async def test_dedupes_same_message(self, agent):
+        """Cross-call dedup removed (creator handles it). Same extraction each call."""
         msg = "The model is overfitting."
         r1 = await agent.ingest(msg, {"source_type": "chat"})
         r2 = await agent.ingest(msg, {"source_type": "chat"})
 
         assert len(r1) >= 1
-        assert r2 == []  # deduplicated
+        assert r2 == r1  # no cross-call dedup; creator handles dedup
 
     @pytest.mark.asyncio
     async def test_case_insensitive_dedupe(self, agent):
+        """Cross-call dedup removed. Each call independently extracts."""
         r1 = await agent.ingest("Cache is full", {"source_type": "chat"})
         r2 = await agent.ingest("cache is full", {"source_type": "chat"})
 
         assert len(r1) >= 1
-        assert r2 == []
+        assert len(r2) >= 1  # no cross-call dedup
 
 
 class TestSentenceSplitting:

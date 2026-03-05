@@ -33,12 +33,12 @@ ABES implements a **Belief Ecology** where beliefs are living entities that deca
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                     Agent Scheduler                         │
-│  (14 phases: Perception → Creation → ... → Experiment)     │
+│  (15 phases: Perception → Creation → ... → Consolidation)  │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    15 Specialized Agents                     │
+│                    16 Specialized Agents                     │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
 │  │Perception│ │ Creator  │ │ Auditor  │ │ Mutation │  ...  │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
@@ -125,6 +125,7 @@ User Message
 12. **BaselineMemoryBridgeAgent** interfaces with RAG/chat
 13. **NarrativeExplainerAgent** generates explanations
 14. **ExperimentOrchestratorAgent** logs results
+15. **ConsolidationAgent** merges near-duplicates, compresses lineage
 
 ### Snapshot Capture
 
@@ -145,13 +146,18 @@ class Belief:
     id: UUID
     content: str                    # natural language
     confidence: float               # 0.0 to 1.0
+    salience: float                 # 0.0 to 1.0 (attentional energy)
+    half_life_days: float           # salience half-life (default 7.0)
     origin: OriginMetadata          # source, timestamp, last_reinforced
     tags: list[str]
     tension: float                  # contradiction pressure
     cluster_id: Optional[UUID]
-    status: BeliefStatus            # active, decaying, mutated, deprecated
+    status: BeliefStatus            # active, decaying, dormant, mutated, deprecated
     parent_id: Optional[UUID]       # lineage tracking
     use_count: int
+    evidence_for: list[EvidenceRef] # supporting evidence ledger
+    evidence_against: list[EvidenceRef]  # attacking evidence ledger
+    links: list[BeliefLink]         # graph edges (reinforces/contradicts)
 ```
 
 ### Snapshot
@@ -175,16 +181,21 @@ All computations follow spec sections 3.4.1–3.4.10:
 
 | Formula | Equation |
 |---------|----------|
-| Decay | `confidence *= decay_rate ^ hours_elapsed` |
+| Confidence Decay | `confidence *= decay_rate ^ hours_elapsed` |
+| Salience Decay | `salience *= 0.5 ^ (hours_elapsed / (half_life_days * 24))` |
 | Contradiction | `semantic_similarity × negation_signal` |
-| Tension | `max(contradiction_score)` per belief |
-| Ranking | `0.4×relevance + 0.3×confidence + 0.2×recency - 0.1×tension` |
+| Tension | `similarity × avg_confidence × (0.5 + 0.5 × opposition)` |
+| Ranking | `0.30×confidence + 0.30×relevance + 0.20×salience + 0.10×recency - 0.10×tension` |
+| Stack Selection | `0.35×salience + 0.30×relevance + 0.20×recency + 0.15×graph_spread` |
+| Evidence Update | `conf = 0.7 × (support / total_evidence) + 0.3 × prior_conf` |
 
 Thresholds:
 - `active → decaying`: confidence < 0.3
 - `decaying → deprecated`: confidence < 0.1
+- `active → dormant`: salience < 0.05
 - Mutation trigger: tension ≥ 0.6 AND confidence < 0.5
 - Resolution trigger: contradiction ≥ 0.7 AND both confidences ≥ 0.6
+- Consolidation merge: cosine similarity > 0.92 within same cluster
 
 ## RL Environment
 
@@ -221,15 +232,16 @@ Current implementation: in-memory dicts. Snapshots are compressed via msgpack + 
 
 ```
 backend/
-├── agents/                 # 15 agents + scheduler
+├── agents/                 # 16 agents + scheduler
 │   ├── perception.py       # Extract facts from chat/logs
 │   ├── belief_creator.py   # Create beliefs with deduplication
-│   ├── reinforcement.py    # Boost confidence on similarity
-│   ├── contradiction_auditor.py  # Detect conflicts
+│   ├── reinforcement.py    # Boost confidence + salience + evidence + graph edges
+│   ├── contradiction_auditor.py  # Detect conflicts, confidence-weighted tension
 │   ├── mutation_engineer.py      # Propose hedged variants
 │   ├── resolution_strategist.py  # Resolve high-confidence conflicts
 │   ├── relevance_curator.py      # Rank by relevance to context
-│   ├── decay_controller.py       # Time-based confidence decay
+│   ├── decay_controller.py       # Confidence + salience half-life + dormancy
+│   ├── consolidation.py          # Merge near-duplicates, compress lineage
 │   ├── baseline_memory_bridge.py # RAG/chat interface
 │   ├── rl_policy.py              # RL control parameters
 │   ├── reward_shaper.py          # Reward computation
@@ -237,7 +249,7 @@ backend/
 │   ├── consistency_checker.py    # Drift detection
 │   ├── narrative_explainer.py    # Natural language explanations
 │   ├── safety_sanity.py          # Safety limits
-│   └── scheduler.py              # 14-phase orchestrator
+│   └── scheduler.py              # 15-phase orchestrator
 ├── api/
 │   ├── app.py              # FastAPI application
 │   ├── schemas.py          # Request/response models
@@ -261,7 +273,8 @@ backend/
 │       ├── clustering.py   # Semantic clustering
 │       ├── decay.py        # Decay logic
 │       ├── contradiction.py # Contradiction detection
-│       ├── ranking.py      # Belief ranking
+│       ├── ranking.py      # Belief ranking (with salience weight)
+│       ├── stack.py        # Belief stack selection + competition
 │       ├── rl_integration.py # RL-BEL bridge
 │       └── timeline.py     # Snapshot timeline
 ├── rl/

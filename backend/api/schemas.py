@@ -54,6 +54,31 @@ class BeliefListResponse(BaseModel):
     page_size: int
 
 
+class BeliefLinkResponse(BaseModel):
+    """Single graph edge between beliefs."""
+    target_id: UUID
+    relation: str
+    weight: float
+
+
+class BeliefEcologyResponse(BaseModel):
+    """Full internal ecology state — exposes fields hidden from BeliefResponse."""
+    id: UUID
+    content: str
+    confidence: float
+    status: str
+    tension: float
+    salience: float
+    half_life_days: float
+    evidence_for_count: int
+    evidence_against_count: int
+    evidence_balance: float
+    links: list[BeliefLinkResponse]
+    link_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
 # ============ Snapshot Schemas ============
 
 class SnapshotMetadataResponse(BaseModel):
@@ -172,6 +197,8 @@ __all__ = [
     "BeliefUpdate",
     "BeliefResponse",
     "BeliefListResponse",
+    "BeliefLinkResponse",
+    "BeliefEcologyResponse",
     "SnapshotMetadataResponse",
     "SnapshotListResponse",
     "SnapshotDetailResponse",

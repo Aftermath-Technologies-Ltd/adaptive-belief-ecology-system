@@ -1,10 +1,11 @@
-"""
-Pydantic models for belief storage in the Belief Ecology engine.
-"""
+# Author: Bradley R. Kinnard
+"""Pydantic models for belief storage in the Belief Ecology engine.
+Extended with salience/energy, evidence ledger, and graph edges."""
 
+import math
 from datetime import datetime, timezone
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -17,6 +18,11 @@ class StrEnum(str, Enum):
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _epoch() -> datetime:
+    """Epoch timestamp so new beliefs aren't born on cooldown."""
+    return datetime(2000, 1, 1, tzinfo=timezone.utc)
 
 
 class BeliefBaseModel(BaseModel):
@@ -36,18 +42,51 @@ class OriginMetadata(BeliefBaseModel):
     turn_index: Optional[int] = None
     episode_id: Optional[str] = None
     timestamp: datetime = Field(default_factory=utcnow)
-    last_reinforced: datetime = Field(default_factory=utcnow)
+    last_reinforced: datetime = Field(default_factory=_epoch)
+
+
+class EvidenceRef(BeliefBaseModel):
+    """One piece of evidence for or against a belief. Lightweight ledger entry."""
+
+    source_id: Optional[UUID] = None  # originating belief or external ref
+    content: str  # what was said / observed
+    direction: str = "supports"  # "supports" | "attacks"
+    weight: float = 1.0  # how strong this evidence is (0-∞)
+    timestamp: datetime = Field(default_factory=utcnow)
+
+    @field_validator("direction")
+    @classmethod
+    def validate_direction(cls, v: str) -> str:
+        if v not in ("supports", "attacks"):
+            raise ValueError(f"direction must be 'supports' or 'attacks', got {v!r}")
+        return v
+
+
+class BeliefLink(BeliefBaseModel):
+    """Weighted edge between beliefs. Type is 'reinforces' or 'contradicts'."""
+
+    target_id: UUID
+    relation: str  # "reinforces" | "contradicts"
+    weight: float = 0.0  # strength of the link
+
+    @field_validator("relation")
+    @classmethod
+    def validate_relation(cls, v: str) -> str:
+        if v not in ("reinforces", "contradicts"):
+            raise ValueError(f"relation must be 'reinforces' or 'contradicts', got {v!r}")
+        return v
 
 
 class BeliefStatus(StrEnum):
     Active = "active"
     Decaying = "decaying"
+    Dormant = "dormant"  # low salience, not dead — can reawaken
     Mutated = "mutated"
     Deprecated = "deprecated"
 
 
 class Belief(BeliefBaseModel):
-    """Belief record used by the ecology layer. Tracks confidence, tension, and lineage."""
+    """Living belief organism. Tracks confidence, salience/energy, tension, lineage, evidence, and graph edges."""
 
     id: UUID = Field(default_factory=uuid4)
     content: str
@@ -63,6 +102,17 @@ class Belief(BeliefBaseModel):
     updated_at: datetime = Field(default_factory=utcnow)
     session_id: Optional[str] = None  # for chat session grouping
     user_id: Optional[UUID] = None  # owner of this belief
+
+    # --- Salience / Energy (distinct from confidence) ---
+    salience: float = Field(default=1.0, ge=0.0, le=1.0)  # how much it matters RIGHT NOW
+    half_life_days: float = Field(default=7.0, gt=0.0)  # salience half-life in days
+
+    # --- Evidence Ledger ---
+    evidence_for: List[EvidenceRef] = Field(default_factory=list)
+    evidence_against: List[EvidenceRef] = Field(default_factory=list)
+
+    # --- Graph Edges (persistent weighted links) ---
+    links: List[BeliefLink] = Field(default_factory=list)
 
     # computed fields for ranking (set by BEL loop, not persisted)
     relevance: Optional[float] = None  # similarity to current context
@@ -109,6 +159,13 @@ class Belief(BeliefBaseModel):
             values["updated_at"] = utcnow()
         return values
 
+    @field_validator("salience")
+    @classmethod
+    def validate_salience(cls, v: float) -> float:
+        if not 0.0 <= v <= 1.0:
+            raise ValueError(f"salience must be between 0.0 and 1.0, got {v}")
+        return v
+
     def increment_use(self) -> None:
         self.use_count += 1
         self.updated_at = utcnow()
@@ -129,5 +186,95 @@ class Belief(BeliefBaseModel):
         if self.confidence < 0.3 and self.status == BeliefStatus.Active:
             self.status = BeliefStatus.Decaying
 
+    # --- Salience Dynamics ---
 
-__all__ = ["utcnow", "OriginMetadata", "BeliefStatus", "Belief"]
+    def decay_salience(self, hours_elapsed: float) -> float:
+        """Exponential salience decay based on half-life. Returns new salience."""
+        if hours_elapsed <= 0:
+            return self.salience
+        half_life_hours = self.half_life_days * 24.0
+        decay_factor = math.pow(0.5, hours_elapsed / half_life_hours)
+        self.salience = max(0.0, min(1.0, self.salience * decay_factor))
+        self.updated_at = utcnow()
+        return self.salience
+
+    def boost_salience(self, amount: float = 0.1) -> float:
+        """Bump salience on use/reinforcement. Capped at 1.0."""
+        self.salience = min(1.0, self.salience + amount)
+        self.updated_at = utcnow()
+        return self.salience
+
+    # --- Evidence Ledger Helpers ---
+
+    def add_evidence(self, ref: "EvidenceRef") -> None:
+        """Append evidence and recompute confidence via naive Bayes-like update."""
+        if ref.direction == "supports":
+            self.evidence_for.append(ref)
+        else:
+            self.evidence_against.append(ref)
+        self._bayes_update()
+        self.updated_at = utcnow()
+
+    def _bayes_update(self) -> None:
+        """Recompute confidence from evidence ledger. Simple weighted ratio."""
+        w_for = sum(e.weight for e in self.evidence_for) or 0.0
+        w_against = sum(e.weight for e in self.evidence_against) or 0.0
+        total = w_for + w_against
+        if total == 0:
+            return  # no evidence -> keep current confidence
+        # nudge toward evidence ratio, blended with prior
+        evidence_ratio = w_for / total
+        # 70% evidence, 30% prior — so a single piece doesn't override everything
+        # Cap at 0.95 to preserve reinforcement headroom
+        self.confidence = max(0.01, min(0.95, 0.7 * evidence_ratio + 0.3 * self.confidence))
+
+    @property
+    def evidence_balance(self) -> float:
+        """Net evidence weight. Positive = more support, negative = more attacks."""
+        return (
+            sum(e.weight for e in self.evidence_for)
+            - sum(e.weight for e in self.evidence_against)
+        )
+
+    # --- Graph Edge Helpers ---
+
+    def add_link(self, target_id: UUID, relation: str, weight: float = 1.0) -> None:
+        """Add or update a weighted edge to another belief."""
+        for link in self.links:
+            if link.target_id == target_id and link.relation == relation:
+                link.weight = weight
+                self.updated_at = utcnow()
+                return
+        self.links.append(BeliefLink(target_id=target_id, relation=relation, weight=weight))
+        self.updated_at = utcnow()
+
+    def get_links(self, relation: Optional[str] = None) -> List["BeliefLink"]:
+        """Get links, optionally filtered by relation type."""
+        if relation is None:
+            return self.links
+        return [lnk for lnk in self.links if lnk.relation == relation]
+
+    # --- Dormancy ---
+
+    def hibernate(self) -> None:
+        """Put belief to sleep. Low salience, not dead — can reawaken."""
+        self.status = BeliefStatus.Dormant
+        self.salience = 0.0
+        self.updated_at = utcnow()
+
+    def reawaken(self, salience_boost: float = 0.5) -> None:
+        """Bring a dormant belief back to active duty."""
+        if self.status == BeliefStatus.Dormant:
+            self.status = BeliefStatus.Active
+            self.salience = min(1.0, salience_boost)
+            self.updated_at = utcnow()
+
+
+__all__ = [
+    "utcnow",
+    "OriginMetadata",
+    "BeliefStatus",
+    "Belief",
+    "EvidenceRef",
+    "BeliefLink",
+]

@@ -60,9 +60,15 @@ class TestMockProvider:
 
 class TestOpenAIProvider:
     def test_init_no_key(self):
-        # should not raise
-        provider = OpenAILLMProvider(api_key=None)
-        assert provider._api_key is None
+        # should not raise — clear env to avoid picking up real key
+        import os
+        saved = os.environ.pop("OPENAI_API_KEY", None)
+        try:
+            provider = OpenAILLMProvider(api_key=None)
+            assert provider._api_key is None
+        finally:
+            if saved is not None:
+                os.environ["OPENAI_API_KEY"] = saved
 
     def test_init_with_key(self):
         provider = OpenAILLMProvider(api_key="test-key")

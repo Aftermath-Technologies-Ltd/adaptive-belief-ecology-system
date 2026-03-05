@@ -271,6 +271,14 @@ async def delete_session(session_id: str):
     raise HTTPException(404, "Session not found")
 
 
+@router.delete("/sessions")
+async def delete_all_sessions():
+    """Delete all chat sessions at once."""
+    service = _get_service()
+    count = service.clear_all_sessions()
+    return {"status": "cleared", "deleted": count}
+
+
 @router.post("/sessions")
 async def create_session():
     """Create a new chat session."""

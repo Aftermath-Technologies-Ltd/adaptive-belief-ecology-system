@@ -8,6 +8,7 @@ from .decay import apply_decay
 from .loop import BeliefEcologyLoop
 from .ranking import rank_beliefs
 from .relevance import compute_relevance_scores
+from .stack import select_belief_stack, compete_for_attention
 from .semantic_contradiction import (
     check_contradiction,
     ContradictionResult,
@@ -32,6 +33,8 @@ __all__ = [
     "compute_tensions",
     "compute_relevance_scores",
     "rank_beliefs",
+    "select_belief_stack",
+    "compete_for_attention",
     "log_snapshot",
     "compress_snapshot",
     "decompress_snapshot",

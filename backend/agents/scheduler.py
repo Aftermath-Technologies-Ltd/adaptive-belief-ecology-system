@@ -33,9 +33,10 @@ class AgentPhase(str, Enum):
     Baseline = "baseline"
     Narrative = "narrative"
     Experiment = "experiment"
+    Consolidation = "consolidation"
 
 
-# Default execution order per spec 4.2
+# Default execution order per spec 4.2, extended with Consolidation
 DEFAULT_SCHEDULE = [
     AgentPhase.Perception,
     AgentPhase.Creation,
@@ -51,6 +52,7 @@ DEFAULT_SCHEDULE = [
     AgentPhase.Baseline,
     AgentPhase.Narrative,
     AgentPhase.Experiment,
+    AgentPhase.Consolidation,
 ]
 
 
@@ -296,6 +298,22 @@ class AgentScheduler:
                     success=True,
                     duration_ms=0,
                     data={"violations": len(violations)},
+                )
+
+        elif phase == AgentPhase.Consolidation:
+            if hasattr(agent, "consolidate"):
+                events, new_beliefs, deprecated = await agent.consolidate(ctx.beliefs)
+                ctx.events.extend(events)
+                return AgentResult(
+                    phase=phase,
+                    success=True,
+                    duration_ms=0,
+                    beliefs_modified=len(new_beliefs) + len(deprecated),
+                    events_emitted=len(events),
+                    data={
+                        "merged": sum(1 for e in events if e.event_type == "merged"),
+                        "compressed": sum(1 for e in events if e.event_type == "compressed"),
+                    },
                 )
 
         # generic fallback - just mark success

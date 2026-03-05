@@ -1,6 +1,7 @@
 # Author: Bradley R. Kinnard
 """
-ReinforcementAgent - boosts confidence of beliefs relevant to incoming context.
+ReinforcementAgent - boosts confidence + salience of beliefs relevant to incoming context.
+Populates 'reinforces' graph edges between co-reinforced beliefs.
 """
 
 import re
@@ -9,18 +10,19 @@ from typing import List, Optional
 
 import numpy as np
 
-from ..core.models.belief import Belief
+from ..core.config import settings
+from ..core.models.belief import Belief, EvidenceRef
 from ..storage.base import BeliefStoreABC
 
 
 # if similarity > this, belief gets reinforced
-RELEVANCE_THRESHOLD = 0.6  # lowered for chat paraphrasing
+RELEVANCE_THRESHOLD = settings.reinforcement_similarity_threshold
 
 # confidence boost per reinforcement (additive, capped at 1.0)
 CONFIDENCE_BOOST = 0.05  # smaller boost, more reinforcements needed
 
 # min seconds between reinforcements for same belief
-COOLDOWN_SECONDS = 10  # lowered for interactive chat
+COOLDOWN_SECONDS = 0  # no cooldown, dedup handles rapid-fire
 
 # max confidence a belief can reach via reinforcement alone
 MAX_REINFORCED_CONFIDENCE = 0.95
@@ -153,17 +155,29 @@ class ReinforcementAgent:
         # compute similarities
         sims = _cosine_batch(incoming_emb, belief_embs)
 
+        import logging
+        _log = logging.getLogger("abes.reinforcement")
+
         reinforced = []
         for idx, belief in enumerate(beliefs):
-            if sims[idx] < RELEVANCE_THRESHOLD:
+            sim_val = float(sims[idx])
+            if sim_val < RELEVANCE_THRESHOLD:
                 continue
+
+            _log.info(
+                f"reinforce candidate sim={sim_val:.3f} "
+                f"conf={belief.confidence:.2f} content='{belief.content[:50]}' "
+                f"incoming='{incoming[:50]}'"
+            )
 
             # skip if on cooldown
             if self._is_on_cooldown(belief):
+                _log.info(f"  -> SKIPPED: cooldown")
                 continue
 
-            # skip if already at ceiling
-            if belief.confidence >= MAX_REINFORCED_CONFIDENCE:
+            # skip if already above ceiling (strict: allow beliefs AT ceiling to reinforce once more)
+            if belief.confidence > MAX_REINFORCED_CONFIDENCE:
+                _log.info(f"  -> SKIPPED: above ceiling {belief.confidence:.2f}")
                 continue
 
             # CRITICAL: skip if incoming has conflicting numeric value
@@ -177,7 +191,23 @@ class ReinforcementAgent:
             belief.increment_use()
             belief.reinforce()
 
+            # boost salience on use
+            belief.boost_salience(settings.salience_boost_on_reinforce)
+
+            # add supporting evidence from incoming text
+            belief.add_evidence(EvidenceRef(
+                content=incoming[:200],
+                direction="supports",
+                weight=float(sims[idx]),
+            ))
+
             reinforced.append(belief)
+
+        # populate 'reinforces' edges between all co-reinforced beliefs
+        for i, a in enumerate(reinforced):
+            for b in reinforced[i + 1:]:
+                a.add_link(b.id, "reinforces", weight=0.5)
+                b.add_link(a.id, "reinforces", weight=0.5)
 
         # persist all at once
         if reinforced:

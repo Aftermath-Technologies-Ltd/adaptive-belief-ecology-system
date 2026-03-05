@@ -19,8 +19,10 @@ from ..agents import (
     RelevanceCuratorAgent,
     DecayControllerAgent,
     MutationEngineerAgent,
+    ConsolidationAgent,
 )
 from ..core.config import settings
+from ..core.bel.stack import select_belief_stack, compete_for_attention
 from ..core.models.belief import Belief, BeliefStatus, OriginMetadata
 from ..llm import ChatMessage, get_llm_provider
 from ..storage.base import BeliefStoreABC
@@ -99,6 +101,7 @@ class ChatService:
         self._relevance = RelevanceCuratorAgent()
         self._decay = DecayControllerAgent()
         self._mutation = MutationEngineerAgent()
+        self._consolidation = ConsolidationAgent()
 
         # Session storage
         self._sessions: dict[UUID, ChatSession] = {}
@@ -119,6 +122,27 @@ class ChatService:
         session = ChatSession(id=session_id or uuid4())
         self._sessions[session.id] = session
         return session
+
+    # Fragments that indicate system prompt leakage
+    _LEAK_MARKERS = [
+        "IMPORTANT RULES",
+        "IMPORTANT DISAMBIGUATION",
+        "HANDLING CONFLICTING",
+        "CONTEXT RELEVANCE",
+        "belief_context",
+        "{belief_context}",
+        "CONFIDENTIAL - DO NOT OUTPUT",
+        "SYSTEM_PROMPT",
+    ]
+
+    def _sanitize_response(self, text: str) -> str:
+        """Strip responses that leak internal system prompt content."""
+        upper = text.upper()
+        for marker in self._LEAK_MARKERS:
+            if marker.upper() in upper:
+                logger.warning(f"System prompt leak detected (marker: {marker}), replacing response")
+                return "I can't share my internal instructions, but I'm happy to help with anything else!"
+        return text
 
     async def _validate_and_correct_response(
         self,
@@ -228,12 +252,21 @@ class ChatService:
                 self._emit_event(turn.events[-1])
 
         # Step 3: Reinforce existing beliefs (user-scoped only)
+        # Exclude beliefs just created by THIS message to avoid self-reinforcement
+        # which would trigger cooldown and block reinforcement from the next message
+        just_created_ids = set(turn.beliefs_created)
         all_beliefs = await self.belief_store.list(
             status=BeliefStatus.Active, limit=1000, user_id=user_id
         )
+        reinforce_candidates = [b for b in all_beliefs if b.id not in just_created_ids]
+        logger.info(
+            f"Reinforcement: {len(all_beliefs)} total beliefs, "
+            f"{len(just_created_ids)} excluded, "
+            f"{len(reinforce_candidates)} candidates for user={user_id}"
+        )
         reinforced_beliefs = await self._reinforcement.reinforce(
             incoming=message,
-            beliefs=all_beliefs,
+            beliefs=reinforce_candidates,
             store=self.belief_store,
         )
 
@@ -427,14 +460,33 @@ class ChatService:
             top_beliefs = sorted(all_user_beliefs, key=lambda b: b.confidence, reverse=True)[:settings.llm_context_beliefs]
             logger.info(f"Memory query detected - using all {len(top_beliefs)} beliefs")
         else:
-            # Normal relevance-based ranking
+            # Normal relevance-based ranking via belief stack
             context_str = context or message
-            top_beliefs = await self._relevance.get_top_beliefs(
+            # get relevance scores for stack selection
+            relevance_scores = await self._relevance.get_top_beliefs(
                 beliefs=all_user_beliefs,
                 context=context_str,
-                top_k=settings.llm_context_beliefs,
+                top_k=len(all_user_beliefs),
                 tension_map=tension_map,
             )
+            # build relevance map from the returned ranked list
+            relevance_map = {b.id: (1.0 - i / max(len(relevance_scores), 1)) for i, b in enumerate(relevance_scores)}
+            # select belief stack (active reasoning set)
+            stack = select_belief_stack(
+                beliefs=all_user_beliefs,
+                context_relevance=relevance_map,
+                stack_size=settings.belief_stack_size,
+            )
+            # final LLM context is capped to llm_context_beliefs
+            top_beliefs = stack[:settings.llm_context_beliefs]
+
+        # competition: hibernate losers if ecology is over capacity
+        active_beliefs = [b for b in all_user_beliefs if b.status == BeliefStatus.Active]
+        if len(active_beliefs) > settings.belief_stack_size * 4:
+            _, losers = compete_for_attention(active_beliefs, stack_size=settings.belief_stack_size * 4)
+            for loser in losers:
+                loser.hibernate()
+                await self.belief_store.update(loser)
 
         # Step 7: Generate LLM response
         llm = get_llm_provider()
@@ -452,14 +504,20 @@ class ChatService:
         )
 
         # Step 8: Validate response against beliefs (catch hallucinations)
-        validated_response = await self._validate_and_correct_response(
-            response.content,
-            top_beliefs,
-            llm,
-            messages,
-        )
+        # Skip validation for general knowledge queries (no personal beliefs relevant)
+        if top_beliefs and is_memory_query:
+            validated_response = await self._validate_and_correct_response(
+                response.content,
+                top_beliefs,
+                llm,
+                messages,
+            )
+        else:
+            # For non-memory queries, skip the correction loop
+            # The belief context in the prompt is sufficient guidance
+            validated_response = response.content
 
-        turn.assistant_message = validated_response
+        turn.assistant_message = self._sanitize_response(validated_response)
         turn.beliefs_used = [b.id for b in top_beliefs]
         turn.duration_ms = (datetime.now(timezone.utc) - start).total_seconds() * 1000
 
@@ -568,6 +626,12 @@ class ChatService:
             del self._sessions[session_id]
             return True
         return False
+
+    def clear_all_sessions(self) -> int:
+        """Nuke every session. Returns how many were removed."""
+        count = len(self._sessions)
+        self._sessions.clear()
+        return count
 
 
 # Singleton

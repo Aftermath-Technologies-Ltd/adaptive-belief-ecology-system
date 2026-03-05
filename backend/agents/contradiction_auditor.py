@@ -313,10 +313,16 @@ class ContradictionAuditorAgent:
                     is_contradiction = result.label == "contradiction"
 
                     if is_contradiction:
-                        # tension weighted by semantic confidence
-                        tension_val = similarity * (0.5 + 0.5 * result.confidence)
+                        # refined tension: overlap × avg_confidence × opposition
+                        avg_confidence = (b1.confidence + b2.confidence) / 2.0
+                        opposition = result.confidence  # semantic opposition strength
+                        tension_val = similarity * avg_confidence * (0.5 + 0.5 * opposition)
                         tension_scores[b1.id] += tension_val
                         tension_scores[b2.id] += tension_val
+
+                        # populate graph edges on the beliefs themselves
+                        b1.add_link(b2.id, "contradicts", weight=tension_val)
+                        b2.add_link(b1.id, "contradicts", weight=tension_val)
 
                         # track top contradictor by semantic confidence
                         current_b1 = top_contradictors.get(b1.id)

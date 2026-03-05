@@ -1,6 +1,9 @@
 # ABES spec (internal only)
 abes_spec_md.md
 
+# Copilot instructions (local only)
+.github/.copilot-instructions.md
+
 # Environment files (contains secrets)
 .env
 .env.local
@@ -58,6 +61,11 @@ data/*.sqlite
 data/users.json
 experiments/results/
 experiments/logs/
+
+# Cognitive eval output (keep baselines, ignore run artifacts)
+results/cognitive_eval/eval_*
+results/cognitive_eval/latest.json
+results/cognitive_eval/*.log
 
 # User data (NEVER commit)
 *.users.json
