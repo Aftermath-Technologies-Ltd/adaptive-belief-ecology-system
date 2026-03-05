@@ -13,6 +13,37 @@ A cognitive memory architecture where beliefs live, decay, contradict, mutate, a
 
 ---
 
+## Table of Contents
+
+- [Try in 2 Minutes](#try-in-2-minutes)
+  - [Start the Cognitive Engine](#start-the-cognitive-engine)
+  - [Optional: Start the Visualizer](#optional-start-the-visualizer)
+  - [Quick Verification](#quick-verification)
+- [Overview](#overview)
+- [Interactive Debugger](#interactive-debugger)
+  - [What happens when context is ingested](#what-happens-when-context-is-ingested)
+  - [How to use it](#how-to-use-it)
+  - [The Demo](#the-demo)
+- [Key Features](#key-features)
+- [Architecture](#architecture)
+  - [Ingestion Pipeline](#ingestion-pipeline)
+  - [API Surface](#api-surface)
+- [Installation](#installation)
+  - [Backend](#backend)
+  - [Visual Debugger (Optional)](#visual-debugger-optional)
+  - [Docker](#docker)
+- [CLI Reference](#cli-reference)
+- [Configuration](#configuration)
+- [Testing and Verification](#testing-and-verification)
+- [Belief Model](#belief-model)
+- [Contradiction Detection](#contradiction-detection)
+- [Authentication](#authentication)
+- [Frontend (Visual Debugger)](#frontend-visual-debugger)
+- [Project Structure](#project-structure)
+- [Limitations](#limitations)
+- [Roadmap](#roadmap)
+- [License](#license)
+
 ## Try in 2 Minutes
 
 ```bash
