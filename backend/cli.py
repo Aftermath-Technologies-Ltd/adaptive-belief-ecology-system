@@ -173,8 +173,19 @@ def cli():
               help="Custom demo conversation JSON.")
 @click.option("--pause/--no-pause", default=True,
               help="Pause between turns for readability.")
+@click.option("--with-decay", is_flag=True,
+              help="Simulate elapsed time between turns to demonstrate decay.")
+@click.option("--decay-hours", default=12.0, show_default=True, type=float,
+              help="Hours to simulate between turns when --with-decay is enabled.")
 @click.option("-v", "--verbose", is_flag=True)
-def demo(headless: bool, script: str, pause: bool, verbose: bool):
+def demo(
+    headless: bool,
+    script: str,
+    pause: bool,
+    with_decay: bool,
+    decay_hours: float,
+    verbose: bool,
+):
     """Run a scripted demo that shows the belief ecology in action.
 
     Launches the backend, sends 12 turns through the chat pipeline,
@@ -221,7 +232,7 @@ def demo(headless: bool, script: str, pause: bool, verbose: bool):
             click.echo(f"  Frontend starting at {FRONTEND_URL}")
 
     try:
-        asyncio.run(_run_demo(turns_data, pause))
+        asyncio.run(_run_demo(turns_data, pause, with_decay, decay_hours))
     except KeyboardInterrupt:
         click.echo("\n  Demo interrupted.")
     finally:
@@ -238,7 +249,12 @@ def demo(headless: bool, script: str, pause: bool, verbose: bool):
     click.echo("  Try: abes inspect (see current belief state)")
 
 
-async def _run_demo(turns: list[dict], pause: bool) -> None:
+async def _run_demo(
+    turns: list[dict],
+    pause: bool,
+    with_decay: bool,
+    decay_hours: float,
+) -> None:
     """Execute the demo conversation against the live API."""
     async with httpx.AsyncClient(base_url=BACKEND_URL, timeout=60.0) as client:
         # Register a demo user
@@ -263,6 +279,7 @@ async def _run_demo(turns: list[dict], pause: bool) -> None:
         await client.post("/beliefs/clear", headers=headers)
 
         session_id = str(uuid4())
+        global_peak_tension = 0.0
         click.echo()
 
         for i, turn in enumerate(turns, 1):
@@ -292,14 +309,47 @@ async def _run_demo(turns: list[dict], pause: bool) -> None:
 
             # Print events
             events = data.get("events", [])
+            turn_peak_tension = 0.0
             if events:
                 for event in events:
                     _print_event(event)
+                    if event.get("event_type") == "tension_changed":
+                        turn_peak_tension = max(turn_peak_tension, float(event.get("tension", 0.0)))
+
+            if turn_peak_tension > 0:
+                click.echo(click.style(
+                    f"    Peak tension this turn: {turn_peak_tension:.2f}",
+                    fg="yellow",
+                ))
+
+            # Pull current ecology stats so tension and status transitions are visible
+            beliefs_resp = await client.get("/beliefs", params={"page_size": 200})
+            if beliefs_resp.status_code == 200:
+                beliefs = beliefs_resp.json().get("beliefs", [])
+                max_tension_now = max((float(b.get("tension", 0.0)) for b in beliefs), default=0.0)
+                deprecated_now = sum(1 for b in beliefs if b.get("status") == "deprecated")
+                active_now = sum(1 for b in beliefs if b.get("status") == "active")
+                global_peak_tension = max(global_peak_tension, turn_peak_tension, max_tension_now)
+                click.echo(click.style(
+                    f"    Ecology: active={active_now} deprecated={deprecated_now} max_tension={max_tension_now:.2f}",
+                    fg="bright_black",
+                ))
 
             # Print assistant response
             click.echo(click.style(f"  ABES: ", fg="cyan", bold=True) +
                        assistant_msg[:200])
             click.echo()
+
+            # Optional decay simulation to make salience and confidence changes visible
+            if with_decay and i < len(turns):
+                sim = await client.post("/beliefs/simulate-time", params={"hours": decay_hours})
+                if sim.status_code == 200:
+                    payload = sim.json()
+                    click.echo(click.style(
+                        f"    Simulated {payload.get('hours', decay_hours):.1f}h elapsed for {payload.get('adjusted', 0)} beliefs",
+                        fg="bright_black",
+                    ))
+                    click.echo()
 
             if pause:
                 time.sleep(delay)
@@ -314,6 +364,7 @@ async def _run_demo(turns: list[dict], pause: bool) -> None:
             click.echo(f"  Total beliefs: {len(beliefs)}")
             click.echo(f"  Active: {active}")
             click.echo(f"  Total tension: {total_tension:.2f}")
+            click.echo(f"  Peak tension observed: {global_peak_tension:.2f}")
 
 
 # ============================================================

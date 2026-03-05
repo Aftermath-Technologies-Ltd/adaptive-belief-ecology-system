@@ -35,6 +35,8 @@ def test_demo_help():
     assert "--headless" in result.output
     assert "--script" in result.output
     assert "--no-pause" in result.output
+    assert "--with-decay" in result.output
+    assert "--decay-hours" in result.output
 
 
 def test_seed_help():

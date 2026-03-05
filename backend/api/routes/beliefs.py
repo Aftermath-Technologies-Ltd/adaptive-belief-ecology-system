@@ -3,7 +3,7 @@
 Belief API routes.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -221,3 +221,25 @@ async def clear_all_beliefs():
         count += 1
 
     return {"cleared": count, "message": f"Deleted {count} beliefs"}
+
+
+@router.post("/simulate-time")
+async def simulate_time(hours: float = Query(12.0, ge=0.1, le=720.0)):
+    """Shift belief timestamps backward to simulate elapsed time for demo decay."""
+    store = get_belief_store()
+    beliefs = await store.list(limit=10000)
+    shift = timedelta(hours=hours)
+
+    adjusted = 0
+    for belief in beliefs:
+        belief.created_at -= shift
+        belief.updated_at -= shift
+        belief.origin.timestamp -= shift
+        belief.origin.last_reinforced -= shift
+        await store.update(belief)
+        adjusted += 1
+
+    return {
+        "adjusted": adjusted,
+        "hours": hours,
+    }

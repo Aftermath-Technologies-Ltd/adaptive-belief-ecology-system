@@ -130,6 +130,29 @@ class TestBeliefsAPI:
         assert len(data["beliefs"]) == 2
         assert data["total"] == 5
 
+    def test_simulate_time(self, client):
+        create_resp = client.post("/beliefs", json={
+            "content": "Time shift test",
+            "confidence": 0.8,
+        })
+        assert create_resp.status_code == 201
+        belief_id = create_resp.json()["id"]
+
+        before = client.get(f"/beliefs/{belief_id}")
+        assert before.status_code == 200
+        before_updated = before.json()["updated_at"]
+
+        sim_resp = client.post("/beliefs/simulate-time?hours=24")
+        assert sim_resp.status_code == 200
+        payload = sim_resp.json()
+        assert payload["adjusted"] >= 1
+        assert payload["hours"] == 24
+
+        after = client.get(f"/beliefs/{belief_id}")
+        assert after.status_code == 200
+        after_updated = after.json()["updated_at"]
+        assert after_updated < before_updated
+
 
 class TestAgentsAPI:
     def test_list_agents(self, client):

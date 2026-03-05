@@ -6,6 +6,7 @@ Combines agent processing, belief management, and LLM response generation.
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import AsyncIterator, Callable, Optional
@@ -223,6 +224,18 @@ class ChatService:
         start = datetime.now(timezone.utc)
         session = self.get_or_create_session(session_id)
         turn = ChatTurn(user_message=message)
+        lower_message = message.lower()
+        update_intent = any(
+            phrase in lower_message
+            for phrase in (
+                "no longer",
+                "switched to",
+                "moved to",
+                "now",
+                "used to",
+                "previously",
+            )
+        )
 
         # Step 1: Perception - extract claims from message
         candidates = await self._perception.ingest(message, {"source_type": "chat"})
@@ -309,12 +322,16 @@ class ChatService:
 
         # Build tension map from events
         tension_map: dict[UUID, float] = {}
+        pair_tension: dict[tuple[UUID, UUID], float] = {}
         for event in contradiction_events:
             # ContradictionDetectedEvent has belief_id and tension
             tension_map[event.belief_id] = max(
                 tension_map.get(event.belief_id, 0.0),
                 event.tension,
             )
+            if event.contradicting_belief_id:
+                pair = tuple(sorted((event.belief_id, event.contradicting_belief_id), key=str))
+                pair_tension[pair] = max(pair_tension.get(pair, 0.0), event.tension)
             # Emit tension event for UI
             belief = next((b for b in all_beliefs if b.id == event.belief_id), None)
             if belief:
@@ -324,9 +341,55 @@ class ChatService:
                     content=belief.content,
                     confidence=belief.confidence,
                     tension=event.tension,
-                    details={"threshold": event.threshold},
+                    details={
+                        "threshold": event.threshold,
+                        "contradicting_belief_id": str(event.contradicting_belief_id) if event.contradicting_belief_id else None,
+                        "semantic_confidence": event.semantic_confidence,
+                        "similarity": event.similarity_score,
+                    },
                 ))
                 self._emit_event(turn.events[-1])
+
+        # Fallback contradiction detection for explicit update language in the current message.
+        # This handles direct revisions like "we no longer use X" even when semantic detection is conservative.
+        if update_intent:
+            explicit_targets: list[str] = []
+            patterns = (
+                r"\bno longer use\s+([a-z0-9+#\- ]{2,40})",
+                r"\bno longer live in\s+([a-z0-9 .\-]{2,40})",
+                r"\bwe switched[^.]*\sto\s+([a-z0-9+#\- ]{2,40})",
+            )
+            for pattern in patterns:
+                for match in re.finditer(pattern, lower_message):
+                    target = match.group(1).strip(" .,")
+                    if target:
+                        explicit_targets.append(target)
+
+            created_ids = set(turn.beliefs_created)
+            pivot_id = next(iter(created_ids), None)
+            for belief in all_beliefs:
+                if belief.id in created_ids:
+                    continue
+                btxt = belief.content.lower()
+                if any(target in btxt for target in explicit_targets):
+                    synthetic_tension = max(settings.tension_threshold_resolution + 0.02, 0.62)
+                    tension_map[belief.id] = max(tension_map.get(belief.id, 0.0), synthetic_tension)
+                    if pivot_id:
+                        pair = tuple(sorted((belief.id, pivot_id), key=str))
+                        pair_tension[pair] = max(pair_tension.get(pair, 0.0), synthetic_tension)
+
+                    turn.events.append(BeliefEvent(
+                        event_type="tension_changed",
+                        belief_id=belief.id,
+                        content=belief.content,
+                        confidence=belief.confidence,
+                        tension=synthetic_tension,
+                        details={
+                            "threshold": settings.tension_threshold_resolution,
+                            "reason": "explicit_update_language",
+                        },
+                    ))
+                    self._emit_event(turn.events[-1])
 
         # Update beliefs with new tensions
         for belief in all_beliefs:
@@ -337,90 +400,107 @@ class ChatService:
                     belief.tension = new_tension
                     await self.belief_store.update(belief)
 
-        # Step 6: Mutation - only evolve when there's genuine ambiguity
-        # If one belief is clearly more confident, don't mutate - let it "win"
+        # Step 6: Resolution and mutation
         all_beliefs = await self.belief_store.list(
             status=BeliefStatus.Active, limit=1000, user_id=user_id
         )
 
-        # Group beliefs by high tension (potential contradictions)
-        high_tension_beliefs = [b for b in all_beliefs if b.tension >= 0.5]
+        beliefs_by_id = {belief.id: belief for belief in all_beliefs}
 
-        for belief in high_tension_beliefs:
-            # Find the contradicting belief
-            contradicting = None
-            for other in all_beliefs:
-                if other.id != belief.id and other.id in tension_map and other.tension >= 0.5:
-                    contradicting = other
-                    break
-
-            if not contradicting:
+        for pair, pair_t in sorted(pair_tension.items(), key=lambda item: item[1], reverse=True):
+            left = beliefs_by_id.get(pair[0])
+            right = beliefs_by_id.get(pair[1])
+            if not left or not right:
+                continue
+            if left.status != BeliefStatus.Active or right.status != BeliefStatus.Active:
                 continue
 
-            # Only mutate if confidences are similar (within 10%)
-            # If one is more confident from more evidence, it "wins"
-            confidence_diff = abs(belief.confidence - contradicting.confidence)
+            confidence_diff = abs(left.confidence - right.confidence)
+            force_temporal_resolution = (
+                update_intent and pair_t >= settings.tension_threshold_resolution
+            )
 
-            if confidence_diff > 0.10:
-                # Clear winner - deprecate the loser, don't mutate
-                loser = belief if belief.confidence < contradicting.confidence else contradicting
-                winner = contradicting if belief.confidence < contradicting.confidence else belief
-                if loser.id == belief.id:  # Only process each pair once
-                    # Deprecate loser instead of just reducing confidence
-                    loser.status = BeliefStatus.Deprecated
-                    loser.confidence *= 0.5
-                    await self.belief_store.update(loser)
+            if confidence_diff > 0.10 or force_temporal_resolution:
+                if force_temporal_resolution and left.id in just_created_ids and right.id not in just_created_ids:
+                    winner = left
+                elif force_temporal_resolution and right.id in just_created_ids and left.id not in just_created_ids:
+                    winner = right
+                elif force_temporal_resolution and left.updated_at != right.updated_at:
+                    winner = left if left.updated_at > right.updated_at else right
+                else:
+                    winner = left if left.confidence >= right.confidence else right
+                loser = right if winner.id == left.id else left
 
-                    # Boost winner slightly
-                    winner.confidence = min(0.95, winner.confidence + 0.05)
-                    winner.tension = 0.0  # Clear tension since contradiction resolved
-                    await self.belief_store.update(winner)
+                loser.status = BeliefStatus.Deprecated
+                loser.confidence = max(0.01, loser.confidence * 0.5)
+                loser.tension = 0.0
+                await self.belief_store.update(loser)
 
-                    turn.beliefs_deprecated.append(loser.id)
-                    turn.events.append(BeliefEvent(
-                        event_type="deprecated",
-                        belief_id=loser.id,
-                        content=loser.content,
-                        confidence=loser.confidence,
-                        tension=loser.tension,
-                        details={"reason": "contradiction_resolved", "winner_id": str(winner.id)},
-                    ))
-                    self._emit_event(turn.events[-1])
-                    logger.info(f"Contradiction resolved: {winner.content[:30]}... wins over {loser.content[:30]}...")
-                continue
+                winner.confidence = min(0.95, winner.confidence + 0.05)
+                winner.tension = max(0.0, winner.tension - pair_t)
+                await self.belief_store.update(winner)
 
-            # Similar confidence - need to hedge/mutate
-            if belief.confidence < 0.9:  # Don't mutate very high confidence beliefs
-                proposal = self._mutation.propose_mutation(
-                    belief=belief,
-                    contradicting=contradicting,
-                    all_beliefs=all_beliefs,
+                turn.beliefs_deprecated.append(loser.id)
+                turn.events.append(BeliefEvent(
+                    event_type="deprecated",
+                    belief_id=loser.id,
+                    content=loser.content,
+                    confidence=loser.confidence,
+                    tension=loser.tension,
+                    details={
+                        "reason": (
+                            "temporal_update_dominance"
+                            if force_temporal_resolution else "contradiction_resolved"
+                        ),
+                        "winner_id": str(winner.id),
+                        "pair_tension": pair_t,
+                    },
+                ))
+                self._emit_event(turn.events[-1])
+                logger.info(
+                    "Contradiction resolved: %s wins over %s",
+                    winner.content[:40],
+                    loser.content[:40],
                 )
+                continue
 
-                if proposal:
-                    # The proposal already contains the mutated belief
-                    mutated = proposal.mutated_belief
-                    await self.belief_store.create(mutated)
+            # Similar confidence contradiction: mutate the weaker side
+            target = left if left.confidence <= right.confidence else right
+            contradicting = right if target.id == left.id else left
+            proposal = self._mutation.propose_mutation(
+                belief=target,
+                contradicting=contradicting,
+                all_beliefs=all_beliefs,
+            )
 
-                    # Mark original as mutated
-                    belief.status = BeliefStatus.Mutated
-                    await self.belief_store.update(belief)
+            if proposal:
+                mutated = proposal.mutated_belief
+                await self.belief_store.create(mutated)
 
-                    turn.beliefs_mutated.append(mutated.id)
-                    turn.events.append(BeliefEvent(
-                        event_type="mutated",
-                        belief_id=mutated.id,
-                        content=mutated.content,
-                        confidence=mutated.confidence,
-                        tension=0.0,
-                        details={
-                            "original_id": str(belief.id),
-                            "original_content": belief.content,
-                            "strategy": proposal.strategy,
-                        },
-                    ))
-                    self._emit_event(turn.events[-1])
-                    logger.info(f"Mutated belief: {belief.content[:30]}... -> {mutated.content[:30]}...")
+                target.status = BeliefStatus.Mutated
+                target.tension = 0.0
+                await self.belief_store.update(target)
+
+                turn.beliefs_mutated.append(mutated.id)
+                turn.events.append(BeliefEvent(
+                    event_type="mutated",
+                    belief_id=mutated.id,
+                    content=mutated.content,
+                    confidence=mutated.confidence,
+                    tension=0.0,
+                    details={
+                        "original_id": str(target.id),
+                        "original_content": target.content,
+                        "contradicting_id": str(contradicting.id),
+                        "strategy": proposal.strategy,
+                    },
+                ))
+                self._emit_event(turn.events[-1])
+                logger.info(
+                    "Mutated belief: %s -> %s",
+                    target.content[:40],
+                    mutated.content[:40],
+                )
 
         # Step 7: Get beliefs for LLM context (hierarchical: session first, then user)
         # IMPORTANT: user_id is the ceiling - never cross-user
@@ -442,7 +522,7 @@ class ChatService:
 
         # For generic questions about user memory, include ALL beliefs
         # This handles "what do you know about me?" type questions
-        lower_msg = message.lower()
+        lower_msg = lower_message
         is_memory_query = any(phrase in lower_msg for phrase in [
             "what do you know",
             "what you know",

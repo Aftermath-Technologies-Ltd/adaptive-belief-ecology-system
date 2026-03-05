@@ -157,6 +157,7 @@ Examples:
 
 ```bash
 abes demo --headless
+abes demo --headless --with-decay --decay-hours 12
 abes inspect --json-out | jq .
 abes verify-quick --prompts 200
 abes verify-determinism --runs 5
