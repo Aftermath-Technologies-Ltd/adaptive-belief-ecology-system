@@ -5,15 +5,13 @@
 </p>
 
 <p align="center">
-  <a href="https://www.gnu.org/licenses/agpl-3.0.en.html"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0" /></a>
+  <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License: AGPL v3" /></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+" /></a>
-  <img src="https://img.shields.io/badge/tests-821%20passing-brightgreen.svg" alt="Tests" />
-  <img src="https://img.shields.io/badge/cognitive%20eval-825%2F1000%20(82.5%25)-blue.svg" alt="Cognitive Eval" />
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-821%20passing-brightgreen.svg" alt="Tests" /></a>
+  <a href="docs/EVALUATIONS.md"><img src="https://img.shields.io/badge/cognitive%20eval-825%2F1000-blue.svg" alt="Cognitive Eval" /></a>
 </p>
 
-ABES is a memory ecology for autonomous AI systems. It ingests context, maintains belief state over time, and handles reinforcement, decay, contradiction, and mutation through a multi-agent pipeline.
-
-Living memory ecology where beliefs reinforce, contradict, mutate, and decay for autonomous agent workflows.
+ABES is a living memory ecology where beliefs reinforce, contradict, mutate, and decay. It runs as a headless engine for autonomous AI agents.
 
 ## Quick Navigation
 
@@ -201,7 +199,7 @@ Moral reasoning shortfalls stem from LLM refusals, not ecology mechanics.
 
 ## Belief Model
 
-### Belief Lifecycle State Machine
+### Lifecycle
 
 <p align="center">
   <img src="docs/assets/belief-lifecycle.svg" alt="Belief Lifecycle State Machine" width="100%" />
