@@ -28,6 +28,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 BACKEND_URL = "http://localhost:8000"
 FRONTEND_URL = "http://localhost:3000"
+ATTRIBUTION_BANNER = (
+    "ABES | Adaptive Belief Ecology System | v1.0 | "
+    "Developed by Bradley R. Kinnard | Aftermath Technologies"
+)
 
 
 def _find_project_root() -> Path:
@@ -703,6 +707,7 @@ async def _inspect(top: int, json_out: bool) -> None:
 # ============================================================
 
 def main():
+    print(ATTRIBUTION_BANNER)
     cli()
 
 

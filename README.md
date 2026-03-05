@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
+  <a href="https://www.gnu.org/licenses/agpl-3.0.en.html"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0" /></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+" /></a>
   <img src="https://img.shields.io/badge/tests-821%20passing-brightgreen.svg" alt="Tests" />
   <img src="https://img.shields.io/badge/cognitive%20eval-825%2F1000%20(82.5%25)-blue.svg" alt="Cognitive Eval" />
@@ -683,4 +683,9 @@ docker-compose.yml  # Full stack orchestration
 
 ## License
 
-MIT 2025-2026 Bradley R. Kinnard
+GNU Affero General Public License v3.0 (AGPL-3.0)
+
+Copyright (C) 2026 Bradley R. Kinnard. All Rights Reserved.
+
+Attribution and notice requirements for derivative works are documented in [NOTICE](NOTICE).
+Citation metadata is available in [CITATION.cff](CITATION.cff).

@@ -3,7 +3,7 @@
 ## Development Setup
 
 ```bash
-git clone https://github.com/moonrunnerkc/adaptive-belief-ecology-system.git
+git clone https://github.com/Aftermath-Technologies-Ltd/adaptive-belief-ecology-system.git
 cd adaptive-belief-ecology-system
 
 python -m venv .venv
@@ -26,7 +26,12 @@ pytest tests/agents/test_perception.py -v
 pytest tests/ --cov=backend --cov-report=term-missing
 ```
 
-All 411 tests should pass. If any fail, check Python version (requires 3.10+).
+All 821 tests should pass. If any fail, check Python version (requires 3.10+).
+
+## License
+
+By contributing, you agree that contributions are licensed under AGPL-3.0.
+Derivative works must retain attribution described in [NOTICE](NOTICE).
 
 ## Code Style
 
@@ -97,11 +102,11 @@ async def test_filters_pure_commands(self, agent):
 
 Before working on something, check if it exists:
 
-- `backend/api/` — empty, no HTTP routes
-- `backend/benchmark/` — empty, no scenarios
-- `backend/metrics/` — empty, no collection
-- `frontend/` — placeholder stubs only
-- `configs/` — empty
-- `experiments/` — empty
+- `backend/api/` - empty, no HTTP routes
+- `backend/benchmark/` - empty, no scenarios
+- `backend/metrics/` - empty, no collection
+- `frontend/` - placeholder stubs only
+- `configs/` - empty
+- `experiments/` - empty
 
 The `BeliefEcologyLoop` class exists but has no tests.

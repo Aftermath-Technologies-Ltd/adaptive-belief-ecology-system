@@ -16,6 +16,11 @@ from .routes import (
     snapshots_router,
 )
 
+ATTRIBUTION_BANNER = (
+    "ABES | Adaptive Belief Ecology System | v1.0 | "
+    "Developed by Bradley R. Kinnard | Aftermath Technologies"
+)
+
 app = FastAPI(
     title="ABES API",
     description="Adaptive Belief Ecology System API",
@@ -50,6 +55,14 @@ async def root():
         "name": "ABES API",
         "version": "0.1.0",
         "docs": "/docs",
+    }
+
+
+@app.get("/version")
+async def version():
+    """Version and attribution endpoint."""
+    return {
+        "attribution": ATTRIBUTION_BANNER,
     }
 
 

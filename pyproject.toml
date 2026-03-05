@@ -3,6 +3,10 @@ name = "abes"
 version = "0.1.0"
 description = "Adaptive Belief Ecology System"
 requires-python = ">=3.10"
+license = "AGPL-3.0"
+authors = [
+    {name = "Bradley R. Kinnard", email = "brad@aftermathtech.com"},
+]
 dependencies = [
     "numpy>=2.0",
     "pydantic>=2.9,<2.10",
