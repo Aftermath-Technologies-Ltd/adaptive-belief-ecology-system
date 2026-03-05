@@ -38,7 +38,7 @@ export function Sidebar({
       <div className="w-64 bg-[#0d0d0d] border-r border-[#1f1f1f] flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between p-3 border-b border-[#1f1f1f]">
-        <span className="text-sm font-medium text-neutral-300">Conversations</span>
+        <span className="text-sm font-medium text-neutral-300">Sessions</span>
         <button
           onClick={onToggle}
           className="p-1.5 hover:bg-[#1a1a1a] rounded transition-colors text-neutral-500 hover:text-neutral-300"
@@ -54,7 +54,7 @@ export function Sidebar({
           className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg bg-[#1a1a1a] hover:bg-[#222] border border-[#2a2a2a] text-neutral-300 text-sm transition-colors"
         >
           <Plus className="w-4 h-4" />
-          New conversation
+          New session
         </button>
       </div>
 
@@ -62,7 +62,7 @@ export function Sidebar({
       <div className="flex-1 overflow-y-auto px-2 py-1">
         {sessions.length === 0 ? (
           <p className="text-xs text-neutral-600 text-center py-4">
-            No conversations yet
+            No sessions yet
           </p>
         ) : (
           <div className="space-y-1">
@@ -84,14 +84,14 @@ export function Sidebar({
                   <span className="truncate flex-1">
                     {session.turn_count > 0
                       ? `${session.turn_count} messages`
-                      : 'New chat'
+                      : 'New session'
                     }
                   </span>
                 </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); onDeleteSession(session.id); }}
                   className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 hover:text-red-400 rounded transition-all text-neutral-600"
-                  title="Delete conversation"
+                  title="Delete session"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -106,7 +106,7 @@ export function Sidebar({
         {sessions.length > 0 && (
           confirmClearAll ? (
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
-              <span className="text-xs text-red-400 flex-1">Delete all chats?</span>
+              <span className="text-xs text-red-400 flex-1">Delete all sessions?</span>
               <button
                 onClick={() => { onDeleteAllSessions(); setConfirmClearAll(false); }}
                 className="px-2 py-0.5 text-xs bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded transition-colors"
@@ -126,7 +126,7 @@ export function Sidebar({
               className="flex items-center gap-2 px-3 py-2 w-full rounded-lg text-neutral-600 hover:bg-red-500/10 hover:text-red-400 text-sm transition-colors"
             >
               <Trash2 className="w-4 h-4" />
-              Clear all chats
+              Clear all sessions
             </button>
           )
         )}

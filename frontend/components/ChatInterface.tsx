@@ -306,10 +306,10 @@ export function ChatInterface({ token }: ChatInterfaceProps) {
                   <span className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">A</span>
                 </div>
                 <h2 className="text-xl font-medium text-neutral-200 mb-2">
-                  Hi, I'm ABES
+                  ABES Ecology Debugger
                 </h2>
                 <p className="text-neutral-500 text-sm max-w-sm leading-relaxed">
-                  I'm your AI with living memory. Tell me about yourself and I'll remember, learn, and evolve my understanding over time.
+                  Inject context to create beliefs. Watch the ecology respond: reinforcement, contradiction, tension, mutation, and decay in real time.
                 </p>
               </div>
             ) : (
@@ -333,7 +333,7 @@ export function ChatInterface({ token }: ChatInterfaceProps) {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Talk to ABES..."
+                placeholder="Inject context into the ecology..."
                 rows={1}
                 className="flex-1 bg-transparent px-4 py-3 text-neutral-100 placeholder-neutral-600 resize-none focus:outline-none min-h-[48px] max-h-[200px] text-sm"
                 disabled={isLoading}

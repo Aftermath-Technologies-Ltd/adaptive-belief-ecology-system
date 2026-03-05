@@ -32,8 +32,8 @@ interface ServiceCard {
 const services: ServiceCard[] = [
   {
     id: 'chat',
-    name: 'Chat',
-    description: 'Conversational AI with evolving memory. Your messages create and reinforce beliefs over time.',
+    name: 'Ingestion Debugger',
+    description: 'Inject beliefs, observe ecology dynamics. Watch confidence, tension, and mutation in real time.',
     href: '/chat',
     icon: MessageSquare,
     status: 'active',
@@ -168,7 +168,7 @@ export default function HomePage() {
         <div className="mt-10">
           <h2 className="text-sm font-medium text-neutral-400 mb-4">Quick Actions</h2>
           <div className="flex flex-wrap gap-3">
-            <QuickAction href="/chat" icon={MessageSquare} label="New Conversation" />
+            <QuickAction href="/chat" icon={MessageSquare} label="New Session" />
             <QuickAction href="/api/docs" icon={Database} label="API Docs" external />
             <QuickAction href="#" icon={Activity} label="View Logs" disabled />
           </div>
