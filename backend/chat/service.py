@@ -134,6 +134,11 @@ class ChatService:
         "{belief_context}",
         "CONFIDENTIAL - DO NOT OUTPUT",
         "SYSTEM_PROMPT",
+        # catch LLM echoing system prompt directive text verbatim
+        "FACTS ARE ABOUT THE USER, NOT ABOUT YOU",
+        "THESE FACTS ARE ABOUT THE USER",
+        "LIST ALL FACTS BELOW",
+        "HIGHER CONFIDENCE SHOULD BE PREFERRED",
     ]
 
     def _sanitize_response(self, text: str) -> str:
@@ -431,6 +436,10 @@ class ChatService:
                     winner = left if left.confidence >= right.confidence else right
                 loser = right if winner.id == left.id else left
 
+                # axioms cannot lose contradiction resolution
+                if loser.is_axiom:
+                    logger.info("Axiom protected from deprecation: %s", loser.content[:40])
+                    continue
                 loser.status = BeliefStatus.Deprecated
                 loser.confidence = max(0.01, loser.confidence * 0.5)
                 loser.tension = 0.0
@@ -477,6 +486,9 @@ class ChatService:
                 mutated = proposal.mutated_belief
                 await self.belief_store.create(mutated)
 
+                if target.is_axiom:
+                    logger.info("Axiom protected from mutation: %s", target.content[:40])
+                    continue
                 target.status = BeliefStatus.Mutated
                 target.tension = 0.0
                 await self.belief_store.update(target)
@@ -505,13 +517,13 @@ class ChatService:
         # Step 7: Get beliefs for LLM context (hierarchical: session first, then user)
         # IMPORTANT: user_id is the ceiling - never cross-user
 
-        # First, get session-specific beliefs (this conversation)
+        # Session-scoped beliefs (this conversation only)
         session_beliefs = await self.belief_store.list(
             status=BeliefStatus.Active, limit=500, user_id=user_id,
             session_id=str(session.id) if session else None
         )
 
-        # Then get all user beliefs (including other sessions)
+        # All user beliefs (including other sessions) for auditing/reinforcement
         all_user_beliefs = await self.belief_store.list(
             status=BeliefStatus.Active, limit=1000, user_id=user_id
         )
@@ -520,8 +532,8 @@ class ChatService:
         for b in session_beliefs:
             b.tags = list(set(b.tags) | {"this_session"})
 
-        # For generic questions about user memory, include ALL beliefs
-        # This handles "what do you know about me?" type questions
+        # Memory queries: "what do you know about me?" retrieves session beliefs
+        # Cross-session beliefs are only included if explicitly requested
         lower_msg = lower_message
         is_memory_query = any(phrase in lower_msg for phrase in [
             "what do you know",
@@ -534,30 +546,37 @@ class ChatService:
             "do you remember",
             "do you know about",
         ])
+        is_cross_session_query = any(phrase in lower_msg for phrase in [
+            "from other session",
+            "from all sessions",
+            "everything across",
+            "across all conversations",
+        ])
 
-        if is_memory_query and all_user_beliefs:
-            # Include all beliefs for memory queries - don't filter by relevance
-            top_beliefs = sorted(all_user_beliefs, key=lambda b: b.confidence, reverse=True)[:settings.llm_context_beliefs]
-            logger.info(f"Memory query detected - using all {len(top_beliefs)} beliefs")
+        # default belief pool: session-scoped for isolation
+        # NEVER fall back to all_user_beliefs for LLM context - that breaks session isolation
+        belief_pool = session_beliefs
+        if is_cross_session_query:
+            belief_pool = all_user_beliefs
+
+        if is_memory_query and belief_pool:
+            top_beliefs = sorted(belief_pool, key=lambda b: b.confidence, reverse=True)[:settings.llm_context_beliefs]
+            logger.info(f"Memory query detected - using {len(top_beliefs)} beliefs (session_scoped={belief_pool is session_beliefs})")
         else:
             # Normal relevance-based ranking via belief stack
             context_str = context or message
-            # get relevance scores for stack selection
             relevance_scores = await self._relevance.get_top_beliefs(
-                beliefs=all_user_beliefs,
+                beliefs=belief_pool,
                 context=context_str,
-                top_k=len(all_user_beliefs),
+                top_k=len(belief_pool),
                 tension_map=tension_map,
             )
-            # build relevance map from the returned ranked list
             relevance_map = {b.id: (1.0 - i / max(len(relevance_scores), 1)) for i, b in enumerate(relevance_scores)}
-            # select belief stack (active reasoning set)
             stack = select_belief_stack(
-                beliefs=all_user_beliefs,
+                beliefs=belief_pool,
                 context_relevance=relevance_map,
                 stack_size=settings.belief_stack_size,
             )
-            # final LLM context is capped to llm_context_beliefs
             top_beliefs = stack[:settings.llm_context_beliefs]
 
         # competition: hibernate losers if ecology is over capacity

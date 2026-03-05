@@ -59,8 +59,9 @@ class ABESSettings(BaseSettings):
     stale_days_deprecated: int = 30  # unused beliefs older than this get deprecated
 
     # --- Contradiction & Tension (spec 3.4.3, 3.4.4) ---
-    similarity_threshold_contradiction: float = 0.5  # skip pairs below this
-    tension_threshold_high: float = 0.7  # flags for resolution
+    # low gate (0.25) lets NLI catch implicit contradictions like vegetarian/steak
+    similarity_threshold_contradiction: float = 0.25
+    tension_threshold_high: float = 0.65  # flags for resolution (lowered to catch NLI-detected pairs)
     tension_cap: float = 10.0
 
     # --- Relevance (spec 3.4.5) ---

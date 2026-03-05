@@ -23,6 +23,10 @@ MERGE_SIMILARITY_THRESHOLD = 0.92
 # max lineage depth before forcing a consolidation
 MAX_LINEAGE_DEPTH = 5
 
+# GC thresholds: beliefs below these and with no links get pruned
+GC_SALIENCE_FLOOR = 0.02
+GC_CONFIDENCE_FLOOR = 0.05
+
 
 @dataclass
 class ConsolidationEvent:
@@ -102,11 +106,15 @@ class ConsolidationAgent:
         to_create.extend(compressed_new)
         to_deprecate.extend(compressed_old)
 
+        # phase 3: garbage collection - prune orphaned low-value beliefs
+        gc_events, gc_pruned = self._garbage_collect(beliefs)
+        events.extend(gc_events)
+        to_deprecate.extend(gc_pruned)
+
         if events:
             logger.info(
-                f"consolidation: {len(merge_events)} merges, "
-                f"{len(compress_events)} compressions, "
-                f"{len(to_deprecate)} beliefs retired"
+                "consolidation: %d merges, %d compressions, %d gc_pruned, %d retired",
+                len(merge_events), len(compress_events), len(gc_events), len(to_deprecate),
             )
 
         return events, to_create, to_deprecate
@@ -240,6 +248,52 @@ class ConsolidationAgent:
             ))
 
         return events, new_beliefs, deprecated
+
+    def _garbage_collect(
+        self, beliefs: List[Belief]
+    ) -> tuple[list[ConsolidationEvent], list[Belief]]:
+        """
+        Prune beliefs that are effectively dead weight:
+        low salience + low confidence + no graph links + not an axiom.
+        Keeps the ecology lean by removing orphaned, forgotten beliefs.
+        """
+        events: list[ConsolidationEvent] = []
+        pruned: list[Belief] = []
+
+        # build a set of all belief IDs that are linked-to by other beliefs
+        linked_ids: set[UUID] = set()
+        for b in beliefs:
+            for lnk in b.links:
+                linked_ids.add(lnk.target_id)
+            if b.parent_id:
+                linked_ids.add(b.parent_id)
+
+        for b in beliefs:
+            # never GC axioms
+            if b.is_axiom:
+                continue
+            # only GC beliefs that are already decaying, dormant, or deprecated
+            if b.status == BeliefStatus.Active and b.confidence > GC_CONFIDENCE_FLOOR:
+                continue
+            # skip if this belief has any outgoing or incoming links
+            has_links = len(b.links) > 0 or b.id in linked_ids
+            if has_links:
+                continue
+            # final check: truly abandoned (low salience AND low confidence)
+            if b.salience <= GC_SALIENCE_FLOOR and b.confidence <= GC_CONFIDENCE_FLOOR:
+                b.status = BeliefStatus.Deprecated
+                pruned.append(b)
+                events.append(ConsolidationEvent(
+                    event_type="pruned",
+                    affected_ids=[b.id],
+                    result_id=None,
+                    timestamp=datetime.now(timezone.utc),
+                ))
+
+        if pruned:
+            logger.info("GC pruned %d orphaned beliefs", len(pruned))
+
+        return events, pruned
 
 
 __all__ = ["ConsolidationAgent", "ConsolidationEvent"]

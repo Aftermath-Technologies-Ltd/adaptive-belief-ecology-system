@@ -103,6 +103,15 @@ class Belief(BeliefBaseModel):
     session_id: Optional[str] = None  # for chat session grouping
     user_id: Optional[UUID] = None  # owner of this belief
 
+    # --- Axiomatic Beliefs ---
+    # Axioms are immutable core beliefs: no decay, no deprecation, no mutation.
+    # Use for hard invariants (e.g., "harm to others is wrong").
+    is_axiom: bool = False
+
+    # --- Memory Tier ---
+    # L1=working (top 50, checked every turn), L2=episodic (recent 2k), L3=deep (10k+)
+    memory_tier: str = Field(default="L2")  # "L1" | "L2" | "L3"
+
     # --- Salience / Energy (distinct from confidence) ---
     salience: float = Field(default=1.0, ge=0.0, le=1.0)  # how much it matters RIGHT NOW
     half_life_days: float = Field(default=7.0, gt=0.0)  # salience half-life in days
@@ -134,6 +143,13 @@ class Belief(BeliefBaseModel):
     def validate_tension(cls, v: float) -> float:
         if v < 0.0:
             raise ValueError(f"tension cannot be negative, got {v}")
+        return v
+
+    @field_validator("memory_tier")
+    @classmethod
+    def validate_memory_tier(cls, v: str) -> str:
+        if v not in ("L1", "L2", "L3"):
+            raise ValueError(f"memory_tier must be L1, L2, or L3, got {v!r}")
         return v
 
     @field_validator("use_count")
@@ -175,7 +191,9 @@ class Belief(BeliefBaseModel):
         self.updated_at = utcnow()
 
     def apply_decay(self, decay_factor: float) -> None:
-        """Apply multiplicative confidence decay. Auto-transitions to Decaying if confidence drops below 0.3."""
+        """Apply multiplicative confidence decay. Axioms are immune to decay."""
+        if self.is_axiom:
+            return  # axioms never decay
         if not 0.0 < decay_factor <= 1.0:
             raise ValueError(f"decay_factor must be in (0.0, 1.0], got {decay_factor}")
 
@@ -257,9 +275,33 @@ class Belief(BeliefBaseModel):
     # --- Dormancy ---
 
     def hibernate(self) -> None:
-        """Put belief to sleep. Low salience, not dead — can reawaken."""
+        """Put belief to sleep. Axioms never hibernate."""
+        if self.is_axiom:
+            return
         self.status = BeliefStatus.Dormant
         self.salience = 0.0
+        self.updated_at = utcnow()
+
+    def deprecate(self, reason: str = "") -> None:
+        """Mark belief as deprecated. Axioms cannot be deprecated."""
+        if self.is_axiom:
+            return
+        self.status = BeliefStatus.Deprecated
+        self.updated_at = utcnow()
+
+    def mutate(self) -> None:
+        """Mark belief as mutated. Axioms cannot be mutated."""
+        if self.is_axiom:
+            return
+        self.status = BeliefStatus.Mutated
+        self.updated_at = utcnow()
+
+    def promote_to_axiom(self) -> None:
+        """Promote this belief to axiom status. Permanent, irreversible."""
+        self.is_axiom = True
+        self.memory_tier = "L1"
+        self.salience = 1.0
+        self.status = BeliefStatus.Active
         self.updated_at = utcnow()
 
     def reawaken(self, salience_boost: float = 0.5) -> None:

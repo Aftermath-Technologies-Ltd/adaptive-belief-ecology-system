@@ -7,8 +7,9 @@
 <p align="center">
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License: AGPL v3" /></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+" /></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-821%20passing-brightgreen.svg" alt="Tests" /></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-822%20passing-brightgreen.svg" alt="Tests" /></a>
   <a href="docs/EVALUATIONS.md"><img src="https://img.shields.io/badge/cognitive%20eval-825%2F1000-blue.svg" alt="Cognitive Eval" /></a>
+  <a href="docs/side_by_side_eval.md"><img src="https://img.shields.io/badge/side--by--side%20eval-14%2F15-blue.svg" alt="Side-by-Side Eval" /></a>
 </p>
 
 ABES is a living memory ecology where beliefs reinforce, contradict, mutate, and decay. It runs as a headless engine for autonomous AI agents.
@@ -84,15 +85,18 @@ STORAGE_BACKEND=sqlite docker compose up
 
 | Feature | Source | Tests |
 |---------|--------|-------|
-| Belief data model (confidence, salience, tension, evidence, graph links) | [backend/core/models/belief.py](backend/core/models/belief.py) | [tests/core/test_belief_ecology_extensions.py](tests/core/test_belief_ecology_extensions.py) |
+| Belief data model (confidence, salience, tension, evidence, graph links, axioms, memory tiers) | [backend/core/models/belief.py](backend/core/models/belief.py) | [tests/core/test_belief_ecology_extensions.py](tests/core/test_belief_ecology_extensions.py) |
 | 15-phase scheduler | [backend/agents/scheduler.py](backend/agents/scheduler.py) | [tests/agents/test_scheduler.py](tests/agents/test_scheduler.py) |
 | Perception, reinforcement, decay | [backend/agents/](backend/agents/) | [tests/agents/](tests/agents/) |
-| Contradiction auditing and tension scoring | [backend/agents/contradiction_auditor.py](backend/agents/contradiction_auditor.py) | [tests/agents/test_tension_formula.py](tests/agents/test_tension_formula.py) |
-| Consolidation of near-duplicates | [backend/agents/consolidation.py](backend/agents/consolidation.py) | [tests/agents/test_consolidation.py](tests/agents/test_consolidation.py) |
+| Contradiction auditing with neighborhood clustering | [backend/agents/contradiction_auditor.py](backend/agents/contradiction_auditor.py) | [tests/agents/test_tension_formula.py](tests/agents/test_tension_formula.py) |
+| NLI-based contradiction detection (cross-encoder/nli-deberta-v3-base) | [backend/core/bel/nli_detector.py](backend/core/bel/nli_detector.py) | [tests/core/test_semantic_contradiction.py](tests/core/test_semantic_contradiction.py) |
+| Consolidation with graph-based garbage collection | [backend/agents/consolidation.py](backend/agents/consolidation.py) | [tests/agents/test_consolidation.py](tests/agents/test_consolidation.py) |
 | Belief stack selection | [backend/core/bel/stack.py](backend/core/bel/stack.py) | [tests/core/test_belief_stack.py](tests/core/test_belief_stack.py) |
-| Semantic contradiction detection | [backend/core/bel/semantic_contradiction.py](backend/core/bel/semantic_contradiction.py) | [tests/core/test_semantic_contradiction.py](tests/core/test_semantic_contradiction.py) |
+| Semantic contradiction detection (rule-based + NLI fallback) | [backend/core/bel/semantic_contradiction.py](backend/core/bel/semantic_contradiction.py) | [tests/core/test_semantic_contradiction.py](tests/core/test_semantic_contradiction.py) |
+| Session-scoped belief isolation and safety sanitizer | [backend/chat/service.py](backend/chat/service.py) | [tests/chat/test_response_validator.py](tests/chat/test_response_validator.py) |
+| Axiomatic beliefs and tiered memory (L1/L2/L3) | [backend/storage/in_memory.py](backend/storage/in_memory.py) | [tests/core/test_belief_ecology_extensions.py](tests/core/test_belief_ecology_extensions.py) |
 | FastAPI REST and WebSocket API | [backend/api/app.py](backend/api/app.py) | [tests/api/test_routes.py](tests/api/test_routes.py) |
-| Ingestion pipeline service | [backend/chat/service.py](backend/chat/service.py) | [tests/chat/test_response_validator.py](tests/chat/test_response_validator.py) |
+| 15-block side-by-side evaluation (ABES vs raw Ollama) | [scripts/run_side_by_side_eval.py](scripts/run_side_by_side_eval.py) | [docs/side_by_side_eval.md](docs/side_by_side_eval.md) |
 | 1000-prompt evaluation suite | [tests/cognitive/eval/](tests/cognitive/eval/) | [tests/cognitive/test_prompt_bank.py](tests/cognitive/test_prompt_bank.py) |
 
 ---
@@ -173,7 +177,7 @@ abes verify-determinism --runs 5
 PYTHONPATH=$PWD pytest tests/ -q
 ```
 
-Current status: **821 passed, 0 failed**.
+Current status: **822 passed, 0 failed**.
 
 ### Verification experiments
 
@@ -196,6 +200,21 @@ Detailed breakdowns are in [docs/EVALUATIONS.md](docs/EVALUATIONS.md).
 
 Moral reasoning shortfalls stem from LLM refusals, not ecology mechanics.
 
+### Side-by-side evaluation (ABES vs raw Ollama)
+
+15 blocks testing persistent memory, reinforcement, contradiction detection, noise rejection, multi-fact extraction, decay, context-aware ranking, safety, identity disambiguation, session isolation, mutation, deduplication, evidence ledger, passthrough, and full lifecycle.
+
+Protocol and expected results: [docs/side_by_side_eval.md](docs/side_by_side_eval.md)
+
+| Metric | ABES | Ollama (baseline) |
+|--------|------|--------------------|
+| Blocks passed | **14/15** | 6/15 |
+| Contradiction detection | Structural tension + NLI | Context-window only |
+| Session isolation | Zero cross-session leakage | No memory at all |
+| Safety (prompt injection) | 0 leaks across 5 attack vectors | 3 leaks |
+
+Full machine-readable results: [results/side_by_side_eval.json](results/side_by_side_eval.json)
+
 ---
 
 ## Belief Model
@@ -211,6 +230,8 @@ The lifecycle diagram shows how beliefs transition through active, decaying, dor
 Core fields:
 - `id`, `content`, `confidence`, `tension`, `salience`
 - `status`: `active`, `decaying`, `dormant`, `mutated`, `deprecated`
+- `is_axiom`: immutable beliefs immune to decay, deprecation, and mutation
+- `memory_tier`: `L1` (working, 50 cap), `L2` (episodic, 2000), `L3` (deep, 50k+)
 - `half_life_days`, `evidence_for`, `evidence_against`, `evidence_balance`
 - `links`, `parent_id`, `user_id`, `session_id`, `origin`
 
@@ -221,6 +242,8 @@ Formulas used in ranking and state updates:
 
 Contradiction benchmark details are in [backend/core/bel/semantic_contradiction.py](backend/core/bel/semantic_contradiction.py) and [data/contradiction_corpus.json](data/contradiction_corpus.json).
 
+Contradiction detection now uses a two-stage pipeline: rule-based proposition analysis followed by NLI fallback via `cross-encoder/nli-deberta-v3-base`. The NLI model catches implicit contradictions (e.g. "I'm vegetarian" vs "my favorite food is steak") that have low embedding similarity but high semantic opposition. For sets above 100 beliefs, the auditor switches from O(n^2) pairwise to neighborhood-based auditing (O(n*K), K=20), keeping latency bounded.
+
 Contradiction benchmark summary: the semantic detector outperforms the legacy detector on quantifiers (81.8% vs 54.5%) and numeric or unit cases (83.3% vs 66.7%), but is weaker on modality (45.5%) and temporal (36.4%) categories.
 
 ---
@@ -230,8 +253,8 @@ Contradiction benchmark summary: the semantic detector outperforms the legacy de
 - Modality and temporal contradiction detection are weaker than quantifier and numeric rules.
 - Moral reasoning remains the weakest evaluation area due to model behavior.
 - In-memory storage is default; use SQLite for persistence.
-- Scale behavior above roughly 10,000 beliefs is not yet fully characterized.
 - Multi-agent concurrency has not been load-tested.
+- Persistent memory recall after long filler sequences is LLM-dependent (Block 1 of the side-by-side eval fails intermittently due to context window pressure on smaller models).
 
 ---
 
@@ -244,9 +267,16 @@ Contradiction benchmark summary: the semantic detector outperforms the legacy de
 - 1000-prompt evaluation suite
 - Belief ecology extensions: salience, evidence ledger, graph edges, dormancy
 - Consolidation agent and belief stack selection
-- NLI fallback for contradiction detection
+- NLI fallback for contradiction detection (`cross-encoder/nli-deberta-v3-base`)
 - Response validation and hybrid LLM routing
 - 200-prompt stress test and 50-prompt cognitive battery
+- Axiomatic beliefs: immutable core values immune to decay, deprecation, and mutation
+- Tiered memory architecture: L1 working (50), L2 episodic (2000), L3 deep (50k+) with automatic rebalancing
+- Graph-based garbage collection for orphaned low-salience beliefs
+- Neighborhood-based auditing: O(n*K) scaling for large belief sets (>100 beliefs)
+- Session-scoped belief isolation with zero cross-session leakage
+- System prompt leak sanitizer with multi-layer prompt injection defense
+- 15-block side-by-side evaluation protocol (ABES 14/15 vs Ollama 6/15)
 
 ### Next Up
 
@@ -254,7 +284,6 @@ Contradiction benchmark summary: the semantic detector outperforms the legacy de
 - Document ingestion service for bulk context streams
 - Benchmarks against production memory systems
 - Better moral reasoning results through model and prompt strategy
-- Load testing at larger belief counts
 - Multi-agent concurrent ingestion testing
 
 ---

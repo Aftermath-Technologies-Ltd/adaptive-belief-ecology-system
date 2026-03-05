@@ -1016,11 +1016,14 @@ class RuleBasedContradictionDetector:
             nli_result = _try_nli_fallback(text_a, text_b)
             if nli_result is not None:
                 is_contra, nli_conf = nli_result
-                if is_contra and nli_conf >= 0.7:
-                    # NLI says contradiction with high confidence
+                if is_contra and nli_conf >= 0.6:
+                    # NLI says contradiction - trust it proportionally
                     result.label = "contradiction"
-                    # blend confidences - NLI should boost, not replace
-                    result.confidence = round(min(1.0, confidence + nli_conf * 0.4), 4)
+                    # if NLI is highly confident and rules found nothing, NLI drives the score
+                    if nli_conf >= 0.9 and confidence < 0.3:
+                        result.confidence = round(nli_conf * 0.85, 4)
+                    else:
+                        result.confidence = round(min(1.0, confidence + nli_conf * 0.5), 4)
                     result.reason_codes.append("NLI_MODEL")
                     result.rule_trace.append({
                         "rule_code": "NLI_MODEL",
@@ -1029,7 +1032,7 @@ class RuleBasedContradictionDetector:
                         "prop_b_index": -1,
                         "matched_fields": ["nli_inference"],
                         "conflict_detail": {"nli_confidence": nli_conf},
-                        "contribution": nli_conf * 0.5
+                        "contribution": nli_conf * 0.6
                     })
                 elif not is_contra and nli_conf >= 0.8:
                     # NLI says NOT contradiction with high confidence

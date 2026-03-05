@@ -14,10 +14,11 @@ logger = logging.getLogger(__name__)
 # lazy-loaded model
 _nli_pipeline = None
 _nli_available: bool | None = None
+_nli_model_used: str = ""
 
-# model to use - DeBERTa v3 trained on MNLI/FEVER/ANLI is best balance of size/accuracy
-DEFAULT_MODEL = "microsoft/deberta-v3-base-mnli-fever-anli"
-FALLBACK_MODEL = "facebook/bart-large-mnli"  # backup if DeBERTa unavailable
+# model to use - cross-encoder DeBERTa v3 trained on NLI tasks, best accuracy for contradiction detection
+DEFAULT_MODEL = "cross-encoder/nli-deberta-v3-base"
+FALLBACK_MODEL = "facebook/bart-large-mnli"  # backup if cross-encoder unavailable
 
 
 @dataclass
@@ -32,7 +33,7 @@ class NLIResult:
 
 def _load_nli_pipeline():
     """Lazy load the NLI pipeline. Returns None if unavailable."""
-    global _nli_pipeline, _nli_available
+    global _nli_pipeline, _nli_available, _nli_model_used
 
     if _nli_available is False:
         return None
@@ -46,8 +47,9 @@ def _load_nli_pipeline():
         _nli_pipeline = pipeline(
             "text-classification",
             model=DEFAULT_MODEL,
-            top_k=None,  # return all labels with scores
+            top_k=None,
         )
+        _nli_model_used = DEFAULT_MODEL
         _nli_available = True
         logger.info("NLI model loaded successfully")
         return _nli_pipeline
@@ -55,15 +57,16 @@ def _load_nli_pipeline():
     except Exception as e:
         logger.warning(f"Failed to load {DEFAULT_MODEL}: {e}")
 
-        # try fallback
         try:
             from transformers import pipeline
 
             logger.info(f"Trying fallback model: {FALLBACK_MODEL}")
             _nli_pipeline = pipeline(
-                "zero-shot-classification",
+                "text-classification",
                 model=FALLBACK_MODEL,
+                top_k=None,
             )
+            _nli_model_used = FALLBACK_MODEL
             _nli_available = True
             logger.info("Fallback NLI model loaded")
             return _nli_pipeline
@@ -92,18 +95,17 @@ def classify_nli(premise: str, hypothesis: str) -> NLIResult | None:
         return None
 
     try:
-        # DeBERTa-style models expect "[CLS] premise [SEP] hypothesis [SEP]"
-        # The pipeline handles this internally when given the right format
-        # For MNLI-style models, input is: "premise</s></s>hypothesis"
-        input_text = f"{premise}</s></s>{hypothesis}"
+        # cross-encoder/nli-deberta-v3-base accepts "[SEP]" between premise and hypothesis
+        input_text = f"{premise} [SEP] {hypothesis}"
 
         results = pipe(input_text)
 
-        # parse results - format varies by model
+        # parse results - cross-encoder returns list of list of dicts with 'label' and 'score'
+        # flatten if nested (top_k=None wraps in extra list)
         if isinstance(results, list) and len(results) > 0:
-            # DeBERTa returns list of dicts with 'label' and 'score'
-            if isinstance(results[0], dict) and "label" in results[0]:
-                raw_scores = {r["label"].lower(): r["score"] for r in results}
+            items = results[0] if isinstance(results[0], list) else results
+            if isinstance(items, list) and len(items) > 0 and isinstance(items[0], dict) and "label" in items[0]:
+                raw_scores = {r["label"].lower(): r["score"] for r in items}
 
                 # normalize label names (some models use LABEL_0, etc.)
                 label_map = {
@@ -128,7 +130,7 @@ def classify_nli(premise: str, hypothesis: str) -> NLIResult | None:
                     label=top_label,
                     score=top_score,
                     raw_scores=normalized_scores,
-                    model_used=DEFAULT_MODEL,
+                    model_used=_nli_model_used,
                 )
 
         logger.warning(f"Unexpected NLI output format: {results}")

@@ -223,6 +223,35 @@ async def clear_all_beliefs():
     return {"cleared": count, "message": f"Deleted {count} beliefs"}
 
 
+@router.post("/axioms", response_model=BeliefResponse)
+async def create_axiom(req: BeliefCreate):
+    """Create an immutable axiom belief. Axioms cannot be decayed, deprecated, or mutated."""
+    store = get_belief_store()
+    belief = Belief(
+        content=req.content,
+        confidence=1.0,
+        origin=OriginMetadata(source="axiom"),
+        tags=req.tags or ["axiom", "core_value"],
+        is_axiom=True,
+        memory_tier="L1",
+        salience=1.0,
+    )
+    created = await store.create(belief)
+    return _belief_to_response(created)
+
+
+@router.post("/{belief_id}/promote-axiom", response_model=BeliefResponse)
+async def promote_to_axiom(belief_id: UUID):
+    """Promote an existing belief to axiom status. Irreversible."""
+    store = get_belief_store()
+    belief = await store.get(belief_id)
+    if not belief:
+        raise HTTPException(404, f"Belief {belief_id} not found")
+    belief.promote_to_axiom()
+    await store.update(belief)
+    return _belief_to_response(belief)
+
+
 @router.post("/simulate-time")
 async def simulate_time(hours: float = Query(12.0, ge=0.1, le=720.0)):
     """Shift belief timestamps backward to simulate elapsed time for demo decay."""

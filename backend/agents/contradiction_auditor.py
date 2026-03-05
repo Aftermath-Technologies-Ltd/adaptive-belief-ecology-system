@@ -39,6 +39,12 @@ EMBEDDING_CACHE_MAX = 2000
 # keeps the O(n^2) pairwise check from killing us
 MAX_BELIEFS_PER_AUDIT = 500
 
+# above this count, switch from full O(n^2) to neighborhood-only auditing
+NEIGHBORHOOD_AUDIT_THRESHOLD = 100
+
+# how many neighbors to check per belief in neighborhood mode
+NEIGHBORHOOD_K = 20
+
 # cap tension so downstream doesn't see crazy values
 MAX_TENSION_VALUE = 10.0
 
@@ -254,16 +260,24 @@ class ContradictionAuditorAgent:
                 self._embedding_cache.popitem(last=False)
 
     def _compute_tensions_from_cache(
-        self, beliefs: List[Belief], similarity_threshold: float = 0.5
+        self, beliefs: List[Belief], similarity_threshold: float = 0.25
     ) -> Tuple[dict[UUID, float], dict[UUID, Tuple[UUID, str, float, ContradictionResult]]]:
         """Pairwise tension via cached embeddings and semantic analysis.
+
+        For small sets (<NEIGHBORHOOD_AUDIT_THRESHOLD), does full O(n^2).
+        For larger sets, uses neighborhood-based auditing: each belief is only
+        checked against its K nearest semantic neighbors, bringing complexity
+        from O(n^2) to O(n*K).
+
+        The similarity threshold is intentionally low (0.25) to catch implicit
+        contradictions (e.g. "I'm vegetarian" vs "my favorite food is steak")
+        that have low embedding similarity but high NLI contradiction scores.
+        The semantic contradiction detector and NLI model filter false positives.
 
         Returns:
             tension_scores: dict mapping belief_id to total tension
             top_contradictors: dict mapping belief_id to
                 (contradicting_id, content, similarity, semantic_result)
-
-        Uses semantic rule-based detection with embedding similarity as a gate.
         """
         if not beliefs:
             return {}, {}
@@ -282,59 +296,61 @@ class ContradictionAuditorAgent:
             embeddings.append(np.array(emb))
 
         tension_scores: dict[UUID, float] = {b.id: 0.0 for b in beliefs}
-        # track highest-confidence contradictor for each belief
         top_contradictors: dict[UUID, Tuple[UUID, str, float, ContradictionResult]] = {}
 
         n = len(beliefs)
-        total_pairs = n * (n - 1) // 2
-        if total_pairs > MAX_PAIRWISE_COMPARISONS:
-            logger.warning(
-                f"pairwise comparisons ({total_pairs}) exceeds limit, truncating"
-            )
 
-        comparison_count = 0
-        for i in range(n):
-            for j in range(i + 1, n):
-                comparison_count += 1
-                if comparison_count > MAX_PAIRWISE_COMPARISONS:
-                    break
+        # generate candidate pairs based on set size
+        if n > NEIGHBORHOOD_AUDIT_THRESHOLD:
+            pairs = self._neighborhood_pairs(beliefs, embeddings, similarity_threshold)
+            logger.info("neighborhood audit: %d beliefs, %d candidate pairs", n, len(pairs))
+        else:
+            pairs = [(i, j) for i in range(n) for j in range(i + 1, n)]
 
-                b1, b2 = beliefs[i], beliefs[j]
+        if len(pairs) > MAX_PAIRWISE_COMPARISONS:
+            logger.warning("pairs (%d) exceeds limit, truncating", len(pairs))
+            pairs = pairs[:MAX_PAIRWISE_COMPARISONS]
 
-                denom = np.linalg.norm(embeddings[i]) * np.linalg.norm(embeddings[j])
-                if denom == 0:
-                    continue
-                similarity = float(np.dot(embeddings[i], embeddings[j]) / denom)
+        for i, j in pairs:
+            b1, b2 = beliefs[i], beliefs[j]
 
-                if similarity > similarity_threshold:
-                    # use semantic contradiction detector
-                    result = check_contradiction(b1.content, b2.content)
+            denom = np.linalg.norm(embeddings[i]) * np.linalg.norm(embeddings[j])
+            if denom == 0:
+                continue
+            similarity = float(np.dot(embeddings[i], embeddings[j]) / denom)
 
-                    is_contradiction = result.label == "contradiction"
+            if similarity > similarity_threshold:
+                result = check_contradiction(b1.content, b2.content)
+                is_contradiction = result.label == "contradiction"
 
-                    if is_contradiction:
-                        # refined tension: overlap × avg_confidence × opposition
-                        avg_confidence = (b1.confidence + b2.confidence) / 2.0
-                        opposition = result.confidence  # semantic opposition strength
+                if is_contradiction:
+                    avg_confidence = (b1.confidence + b2.confidence) / 2.0
+                    opposition = result.confidence
+
+                    # for NLI-detected contradictions, the model is the authority —
+                    # don't let low embedding similarity drag down the tension
+                    nli_driven = "NLI_MODEL" in result.reason_codes
+                    if nli_driven and opposition >= 0.8:
+                        # NLI high-confidence: tension directly from semantic confidence
+                        tension_val = avg_confidence * opposition
+                    else:
+                        # rule-based: similarity-weighted as before
                         tension_val = similarity * avg_confidence * (0.5 + 0.5 * opposition)
-                        tension_scores[b1.id] += tension_val
-                        tension_scores[b2.id] += tension_val
+                    tension_scores[b1.id] += tension_val
+                    tension_scores[b2.id] += tension_val
 
-                        # populate graph edges on the beliefs themselves
-                        b1.add_link(b2.id, "contradicts", weight=tension_val)
-                        b2.add_link(b1.id, "contradicts", weight=tension_val)
+                    # populate graph edges on the beliefs themselves
+                    b1.add_link(b2.id, "contradicts", weight=tension_val)
+                    b2.add_link(b1.id, "contradicts", weight=tension_val)
 
-                        # track top contradictor by semantic confidence
-                        current_b1 = top_contradictors.get(b1.id)
-                        if current_b1 is None or result.confidence > current_b1[3].confidence:
-                            top_contradictors[b1.id] = (b2.id, b2.content, similarity, result)
+                    # track top contradictor by semantic confidence
+                    current_b1 = top_contradictors.get(b1.id)
+                    if current_b1 is None or result.confidence > current_b1[3].confidence:
+                        top_contradictors[b1.id] = (b2.id, b2.content, similarity, result)
 
-                        current_b2 = top_contradictors.get(b2.id)
-                        if current_b2 is None or result.confidence > current_b2[3].confidence:
-                            top_contradictors[b2.id] = (b1.id, b1.content, similarity, result)
-
-            if comparison_count > MAX_PAIRWISE_COMPARISONS:
-                break
+                    current_b2 = top_contradictors.get(b2.id)
+                    if current_b2 is None or result.confidence > current_b2[3].confidence:
+                        top_contradictors[b2.id] = (b1.id, b1.content, similarity, result)
 
         # clamp
         for bid in tension_scores:
@@ -342,6 +358,43 @@ class ContradictionAuditorAgent:
                 tension_scores[bid] = MAX_TENSION_VALUE
 
         return tension_scores, top_contradictors
+
+    def _neighborhood_pairs(
+        self,
+        beliefs: List[Belief],
+        embeddings: list,
+        similarity_threshold: float,
+    ) -> list[Tuple[int, int]]:
+        """
+        Find candidate pairs using semantic neighborhood.
+        For each belief, compute cosine similarity against all others via matrix ops,
+        then keep top-K neighbors above the similarity threshold.
+        Returns deduplicated list of (i, j) index pairs where i < j.
+        """
+        emb_matrix = np.stack(embeddings)
+        # normalize for cosine similarity
+        norms = np.linalg.norm(emb_matrix, axis=1, keepdims=True)
+        norms = np.maximum(norms, 1e-10)
+        normed = emb_matrix / norms
+
+        # full cosine similarity matrix via single matmul
+        sim_matrix = normed @ normed.T
+
+        n = len(beliefs)
+        k = min(NEIGHBORHOOD_K, n - 1)
+        pairs: set[Tuple[int, int]] = set()
+
+        for i in range(n):
+            row = sim_matrix[i].copy()
+            row[i] = -1.0  # exclude self
+            top_k_idx = np.argpartition(row, -k)[-k:]
+            for j_val in top_k_idx:
+                j = int(j_val)
+                if row[j] >= similarity_threshold:
+                    pair = (min(i, j), max(i, j))
+                    pairs.add(pair)
+
+        return sorted(pairs)
 
     async def _load_persisted_state(self, store) -> None:
         """Try loading debounce state from store."""
