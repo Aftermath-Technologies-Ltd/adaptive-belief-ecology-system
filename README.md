@@ -13,6 +13,20 @@
 
 ABES is a memory ecology for autonomous AI systems. It ingests context, maintains belief state over time, and handles reinforcement, decay, contradiction, and mutation through a multi-agent pipeline.
 
+Living memory ecology where beliefs reinforce, contradict, mutate, and decay for autonomous agent workflows.
+
+## Quick Navigation
+
+- [Quick Start](#quick-start)
+- [Key Features](#key-features)
+- [Architecture](#architecture)
+- [The Demo and CLI Reference](#the-demo-and-cli-reference)
+- [Testing and Verification](#testing-and-verification)
+- [Belief Model](#belief-model)
+- [Limitations](#limitations)
+- [Roadmap](#roadmap)
+- [License](#license)
+
 ---
 
 ## Quick Start
@@ -181,15 +195,19 @@ Detailed breakdowns are in [docs/EVALUATIONS.md](docs/EVALUATIONS.md).
 | Working memory | **94.4%** |
 | Semantic memory | **92.8%** |
 
-Moral reasoning failures are primarily LLM behavior, not belief ecology mechanics.
+Moral reasoning shortfalls stem from LLM refusals, not ecology mechanics.
 
 ---
 
 ## Belief Model
 
+### Belief Lifecycle State Machine
+
 <p align="center">
   <img src="docs/assets/belief-lifecycle.svg" alt="Belief Lifecycle State Machine" width="100%" />
 </p>
+
+The lifecycle diagram shows how beliefs transition through active, decaying, dormant, mutated, and deprecated states.
 
 Core fields:
 - `id`, `content`, `confidence`, `tension`, `salience`
@@ -203,6 +221,8 @@ Formulas used in ranking and state updates:
 - Stack ranking: weighted score over confidence, relevance, salience, recency, and tension
 
 Contradiction benchmark details are in [backend/core/bel/semantic_contradiction.py](backend/core/bel/semantic_contradiction.py) and [data/contradiction_corpus.json](data/contradiction_corpus.json).
+
+Contradiction benchmark summary: the semantic detector outperforms the legacy detector on quantifiers (81.8% vs 54.5%) and numeric or unit cases (83.3% vs 66.7%), but is weaker on modality (45.5%) and temporal (36.4%) categories.
 
 ---
 
