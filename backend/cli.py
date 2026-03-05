@@ -177,6 +177,8 @@ def cli():
               help="Simulate elapsed time between turns to demonstrate decay.")
 @click.option("--decay-hours", default=12.0, show_default=True, type=float,
               help="Hours to simulate between turns when --with-decay is enabled.")
+@click.option("--keep-alive", is_flag=True,
+              help="Keep backend running after demo so abes inspect works immediately.")
 @click.option("-v", "--verbose", is_flag=True)
 def demo(
     headless: bool,
@@ -184,6 +186,7 @@ def demo(
     pause: bool,
     with_decay: bool,
     decay_hours: float,
+    keep_alive: bool,
     verbose: bool,
 ):
     """Run a scripted demo that shows the belief ecology in action.
@@ -236,7 +239,7 @@ def demo(
     except KeyboardInterrupt:
         click.echo("\n  Demo interrupted.")
     finally:
-        if owned_backend and backend_proc:
+        if owned_backend and backend_proc and not keep_alive:
             backend_proc.terminate()
             backend_proc.wait(timeout=5)
         if frontend_proc:
@@ -245,8 +248,19 @@ def demo(
 
     click.echo()
     click.echo(click.style("  Demo complete.", fg="green"))
-    click.echo("  Try: abes chat    (interactive mode)")
-    click.echo("  Try: abes inspect (see current belief state)")
+    if owned_backend and keep_alive:
+        click.echo(click.style(f"  Backend is still running at {BACKEND_URL}", fg="cyan"))
+        click.echo("  Try: abes inspect")
+        click.echo("  Try: curl http://localhost:8000/beliefs | jq .")
+        click.echo("  Stop it with: pkill -f 'uvicorn backend.api.app:app'")
+    elif owned_backend and not keep_alive:
+        click.echo("  The demo backend was temporary and has stopped.")
+        click.echo("  Re-run with --keep-alive to inspect after the script.")
+        click.echo("  Or start manually: PYTHONPATH=$PWD uvicorn backend.api.app:app --port 8000")
+        click.echo("  Then run: abes inspect")
+    else:
+        click.echo("  Backend was already running and remains available.")
+        click.echo("  Try: abes inspect")
 
 
 async def _run_demo(

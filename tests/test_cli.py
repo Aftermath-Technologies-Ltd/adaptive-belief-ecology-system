@@ -37,6 +37,7 @@ def test_demo_help():
     assert "--no-pause" in result.output
     assert "--with-decay" in result.output
     assert "--decay-hours" in result.output
+    assert "--keep-alive" in result.output
 
 
 def test_seed_help():
